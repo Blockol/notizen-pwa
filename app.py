@@ -1412,10 +1412,7 @@ class NotizenApp(QMainWindow):
             }}
             QLineEdit:focus {{ border-bottom-color: {T['accent']}; }}
         """)
-        self.title_input.textChanged.connect(lambda: (
-            self._upload_debounce.start(2000)
-            if self.drive_sync and self.drive_sync.is_connected() else None
-        ))
+        self.title_input.textChanged.connect(self._on_title_changed)
         ea_layout.addWidget(self.title_input)
 
         self.date_label = QLabel("")
@@ -1526,7 +1523,7 @@ class NotizenApp(QMainWindow):
                      query in n.get("title", "").lower() or
                      query in n.get("content", "").lower()]
 
-        notes = sorted(notes, key=lambda n: n.get("modified", ""), reverse=True)
+        notes = sorted(notes, key=lambda n: n.get("id", ""))
 
         for note in notes:
             item = QListWidgetItem()
@@ -1636,6 +1633,12 @@ class NotizenApp(QMainWindow):
                 note["modified"] = datetime.now().isoformat()
                 save_notes(self.notes_data)
                 self._update_tabs()
+                self._refresh_list()
+
+    def _on_title_changed(self):
+        self._save_current()
+        if self.drive_sync and self.drive_sync.is_connected():
+            self._upload_debounce.start(2000)
 
     def _on_text_changed(self):
         content = self.text_editor.toPlainText()

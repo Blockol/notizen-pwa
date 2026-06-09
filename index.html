@@ -730,7 +730,7 @@ function renderList(filteredNotes) {
 
   let toShow = filteredNotes || notes.filter(n =>
     !q || (n.title||'').toLowerCase().includes(q) || (n.content||'').toLowerCase().includes(q)
-  ).sort((a,b) => (b.modified||'').localeCompare(a.modified||''));
+  ).sort((a,b) => (a.id||'').localeCompare(b.id||''));
 
   if (!toShow.length) {
     list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:40px 20px;">' +
@@ -918,12 +918,13 @@ function saveCurrentNote() {
   const newTitle = document.getElementById('note-title-input').value.trim() || 'Unbenannte Notiz';
   const newContent = document.getElementById('note-content-input').value;
   if (note.title !== newTitle || note.content !== newContent) {
+    const titleChanged = note.title !== newTitle;
     note.title = newTitle;
     note.content = newContent;
     note.modified = new Date().toISOString();
     saveNotesToStorage();
     renderTabBar();
-    // Auto-upload 8s after last change
+    if (titleChanged) renderList();
     clearTimeout(_uploadDebounce);
     _uploadDebounce = setTimeout(() => syncNow(), 2000);
   }
