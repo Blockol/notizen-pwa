@@ -1754,22 +1754,43 @@ class NotizenApp(QMainWindow):
             remote = self.drive_sync.download()
             if not remote:
                 return
-            local_mod = self.notes_data.get("last_modified", "")
-            remote_mod = remote.get("last_modified", "")
-            if remote_mod > local_mod:
-                local_by_id = {n["id"]: n for n in self.notes_data.get("notes", [])}
-                remote_by_id = {n["id"]: n for n in remote.get("notes", [])}
-                merged = {}
-                for nid in set(list(local_by_id) + list(remote_by_id)):
-                    l, r = local_by_id.get(nid), remote_by_id.get(nid)
-                    if l and r:
-                        merged[nid] = l if l["modified"] >= r["modified"] else r
-                    else:
-                        merged[nid] = l or r
+            local_by_id = {n["id"]: n for n in self.notes_data.get("notes", [])}
+            remote_by_id = {n["id"]: n for n in remote.get("notes", [])}
+            merged = {}
+            changed = False
+            for nid in set(list(local_by_id) + list(remote_by_id)):
+                l, r = local_by_id.get(nid), remote_by_id.get(nid)
+                if l and r:
+                    winner = l if l["modified"] >= r["modified"] else r
+                    if winner is r and r["modified"] > l["modified"]:
+                        changed = True
+                    merged[nid] = winner
+                elif r:
+                    merged[nid] = r
+                    changed = True
+                else:
+                    merged[nid] = l
+            if changed:
                 self.notes_data["notes"] = list(merged.values())
                 save_notes(self.notes_data)
                 from PyQt6.QtCore import QMetaObject
-                QMetaObject.invokeMethod(self, "_refresh_list", Qt.ConnectionType.QueuedConnection)
+                QMetaObject.invokeMethod(self, "_on_remote_update", Qt.ConnectionType.QueuedConnection)
+
+    def _on_remote_update(self):
+        self._refresh_list()
+        if self.current_note_id:
+            note = next((n for n in self.notes_data.get("notes", []) if n["id"] == self.current_note_id), None)
+            if note:
+                cursor_pos = self.text_editor.textCursor().position()
+                self.text_editor.blockSignals(True)
+                self.title_input.blockSignals(True)
+                self.title_input.setText(note.get("title", ""))
+                self.text_editor.setPlainText(note.get("content", ""))
+                cursor = self.text_editor.textCursor()
+                cursor.setPosition(min(cursor_pos, len(note.get("content", ""))))
+                self.text_editor.setTextCursor(cursor)
+                self.text_editor.blockSignals(False)
+                self.title_input.blockSignals(False)
 
     def closeEvent(self, event):
         self._save_current()

@@ -1296,10 +1296,10 @@ downloadFromDrive();
 async function fullSync() {
   const syncBtns = [document.getElementById('rail-sync-btn'), document.getElementById('mobile-sync-btn')];
   syncBtns.forEach(b => b && b.classList.add('spinning'));
-  showToast('⟳ Synchronisiere...');
+  showToast('↓ Aktualisiere...');
   try {
-    await syncNow();
-    await downloadFromDrive();
+    await downloadFromDrive();  // erst runterladen → sofort neue Daten sichtbar
+    await syncNow();            // dann hochladen
   } finally {
     syncBtns.forEach(b => b && b.classList.remove('spinning'));
   }
