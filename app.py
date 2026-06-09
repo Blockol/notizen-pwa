@@ -1334,15 +1334,20 @@ class NotizenApp(QMainWindow):
         self.autosave_timer.timeout.connect(self._save_current)
         self.autosave_timer.start(5000)
 
-        # Auto-sync every 15s (upload)
+        # Auto-sync every 30s fallback (upload)
         self.sync_timer = QTimer()
         self.sync_timer.timeout.connect(self._auto_sync)
-        self.sync_timer.start(15000)
+        self.sync_timer.start(30000)
 
-        # Auto-download every 30s (pick up changes from other devices)
+        # Auto-download every 5s (pick up changes from other devices)
         self.download_timer = QTimer()
         self.download_timer.timeout.connect(self._periodic_download)
-        self.download_timer.start(30000)
+        self.download_timer.start(5000)
+
+        # Debounce upload: 2s after last change
+        self._upload_debounce = QTimer()
+        self._upload_debounce.setSingleShot(True)
+        self._upload_debounce.timeout.connect(self._auto_sync)
 
         self.sync_status_signal.connect(self._update_sync_label)
 
@@ -1407,6 +1412,10 @@ class NotizenApp(QMainWindow):
             }}
             QLineEdit:focus {{ border-bottom-color: {T['accent']}; }}
         """)
+        self.title_input.textChanged.connect(lambda: (
+            self._upload_debounce.start(2000)
+            if self.drive_sync and self.drive_sync.is_connected() else None
+        ))
         ea_layout.addWidget(self.title_input)
 
         self.date_label = QLabel("")
@@ -1633,6 +1642,8 @@ class NotizenApp(QMainWindow):
         words = len(content.split()) if content.strip() else 0
         chars = len(content)
         self.status_bar.showMessage(f"  {words} Woerter  \u00B7  {chars} Zeichen")
+        if self.drive_sync and self.drive_sync.is_connected():
+            self._upload_debounce.start(2000)
 
     # ── CONTEXT MENUS ─────────────────────────
     def _editor_context_menu(self, pos):

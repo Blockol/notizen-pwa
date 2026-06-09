@@ -925,7 +925,7 @@ function saveCurrentNote() {
     renderTabBar();
     // Auto-upload 8s after last change
     clearTimeout(_uploadDebounce);
-    _uploadDebounce = setTimeout(() => syncNow(), 8000);
+    _uploadDebounce = setTimeout(() => syncNow(), 2000);
   }
 }
 
@@ -1258,7 +1258,7 @@ document.getElementById('note-content-input').addEventListener('input', updateSt
 //  AUTO-SAVE + SYNC
 // ─────────────────────────────────────────────
 setInterval(() => { if (currentNoteId) saveCurrentNote(); }, 5000);
-setInterval(() => { downloadFromDrive(); }, 20000);
+setInterval(() => { downloadFromDrive(); }, 5000);
 
 // ─────────────────────────────────────────────
 //  INIT
