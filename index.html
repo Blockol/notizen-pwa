@@ -98,6 +98,37 @@
   }
   #ai-search-btn.active { background: #0d1f15; border-color: var(--accent); color: var(--accent); }
   #ai-search-status { font-size: 9px; color: var(--muted); display: none; }
+  #ai-chat-panel {
+    display: none; flex-direction: column; gap: 8px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-m); margin: 0 8px 8px; padding: 10px 12px;
+    flex-shrink: 0;
+  }
+  #ai-chat-panel.visible { display: flex; }
+  #ai-chat-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+  #ai-chat-query { font-size: 10px; color: var(--muted); font-style: italic; flex: 1; }
+  #ai-chat-close {
+    background: transparent; border: none; color: var(--muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px; flex-shrink: 0;
+  }
+  #ai-chat-close:hover { color: var(--text); }
+  #ai-chat-answer {
+    font-size: 12px; line-height: 1.6; color: var(--text);
+    max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+  }
+  #ai-chat-sources-label { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
+  #ai-chat-sources { display: flex; flex-direction: column; gap: 4px; }
+  .ai-source-chip {
+    display: flex; align-items: baseline; gap: 6px;
+    background: transparent; border: none; padding: 0; cursor: pointer; text-align: left;
+  }
+  .ai-source-chip-title {
+    color: var(--accent); font-size: 11px; border: 1px solid var(--border);
+    border-radius: 3px; padding: 2px 7px; white-space: nowrap; flex-shrink: 0;
+    transition: background .1s;
+  }
+  .ai-source-chip:hover .ai-source-chip-title { background: rgba(0,255,136,0.08); }
+  .ai-source-chip-reason { font-size: 10px; color: var(--muted); }
   #sidebar-label {
     padding: 6px 14px 4px; font-size: 10px; font-weight: 600; color: var(--muted);
     letter-spacing: 1px; flex-shrink: 0; text-transform: uppercase;
@@ -434,6 +465,15 @@
       <button id="ai-search-btn" onclick="toggleAISearch()">&#10024; KI-Suche</button>
       <span id="ai-search-status"></span>
     </div>
+    <div id="ai-chat-panel">
+      <div id="ai-chat-header">
+        <span id="ai-chat-query"></span>
+        <button id="ai-chat-close" onclick="closeAIChat()" title="Schlie&szlig;en">&times;</button>
+      </div>
+      <div id="ai-chat-answer"></div>
+      <div id="ai-chat-sources-label" style="display:none">Quellen:</div>
+      <div id="ai-chat-sources"></div>
+    </div>
     <div id="sidebar-label">NOTIZEN</div>
     <div id="notes-list"></div>
   </div>
@@ -766,11 +806,17 @@ function toggleAISearch() {
   const btn = document.getElementById('ai-search-btn');
   const inp = document.getElementById('search-input');
   btn.classList.toggle('active', aiSearchActive);
-  inp.placeholder = aiSearchActive ? '&#10024; KI-Suche... (Enter)' : '&#128269; Suchen...';
+  inp.placeholder = aiSearchActive ? '\u2728 KI-Frage stellen... (Enter)' : '\uD83D\uDD0D Suchen...';
   if (!aiSearchActive) {
     document.getElementById('ai-search-status').style.display = 'none';
+    closeAIChat();
     renderList();
   }
+}
+
+function closeAIChat() {
+  document.getElementById('ai-chat-panel').classList.remove('visible');
+  document.getElementById('ai-chat-sources-label').style.display = 'none';
 }
 
 async function runAISearch() {
@@ -779,24 +825,53 @@ async function runAISearch() {
   const cfg = getConfig();
   const status = document.getElementById('ai-search-status');
   status.style.display = 'inline';
-  status.textContent = '&#9203; Suche...';
+  status.textContent = '\u23F3 Denke nach...';
 
   const context = notes.map(n =>
-    `- ID:${n.id} Titel:${n.title||'Unbenannt'} Inhalt:${(n.content||'').slice(0,150).replace(/\n/g,' ')}`
+    `--- Notiz ID:${n.id} ---\nTitel: ${n.title||'Unbenannt'}\nInhalt: ${(n.content||'').slice(0,600).replace(/\n/g,' ')}\n`
   ).join('\n');
 
-  const instruction = 'Du bist ein Notizen-Suchassistent. Gib eine JSON-Liste zurueck mit relevanten Notizen. Format: [{"id":"...","reason":"..."}]. Max 10. Nur JSON.';
-  const prompt = `Suchanfrage: ${query}\n\nNotizen:\n${context}`;
+  const instruction = 'Du bist ein KI-Assistent fuer Notizen. Analysiere alle Notizen und gib eine hilfreiche, ausfuehrliche Antwort auf Deutsch. Gib das Ergebnis als JSON zurueck: {"answer":"Deine Antwort...","sources":[{"id":"...","title":"...","reason":"Kurze Begruendung"}]}. Maximal 5 Quellen. Nur JSON, kein anderer Text.';
+  const prompt = `Frage: ${query}\n\nNotizen:\n${context}`;
 
   try {
     const resultText = await callAI(cfg, instruction, prompt);
     let cleaned = resultText.trim();
     if (cleaned.startsWith('```')) cleaned = cleaned.split('\n').slice(1).join('\n').replace(/```\s*$/, '');
-    const results = JSON.parse(cleaned);
-    const ids = results.map(r => r.id);
-    const matched = notes.filter(n => ids.includes(n.id));
-    status.textContent = `&#10003; ${matched.length} Treffer`;
-    renderList(matched);
+    const result = JSON.parse(cleaned);
+
+    const sources = result.sources || [];
+    const sourceIds = sources.map(s => s.id);
+    const matched = notes.filter(n => sourceIds.includes(n.id));
+
+    status.textContent = `\u2713 Antwort bereit`;
+
+    // Show chat panel
+    const panel = document.getElementById('ai-chat-panel');
+    document.getElementById('ai-chat-query').textContent = '\u201E' + query + '\u201C';
+    document.getElementById('ai-chat-answer').textContent = result.answer || 'Keine Antwort erhalten.';
+
+    const srcContainer = document.getElementById('ai-chat-sources');
+    srcContainer.innerHTML = '';
+    const srcLabel = document.getElementById('ai-chat-sources-label');
+    if (sources.length > 0) {
+      srcLabel.style.display = 'block';
+      sources.forEach(src => {
+        const note = notes.find(n => n.id === src.id);
+        const title = src.title || (note && note.title) || 'Unbekannte Notiz';
+        const btn = document.createElement('button');
+        btn.className = 'ai-source-chip';
+        btn.innerHTML = `<span class="ai-source-chip-title">\u2192 ${escHtml(title)}</span><span class="ai-source-chip-reason">${escHtml(src.reason||'')}</span>`;
+        btn.onclick = () => { openNote(src.id); closeSidebar(); };
+        srcContainer.appendChild(btn);
+      });
+    } else {
+      srcLabel.style.display = 'none';
+    }
+    panel.classList.add('visible');
+
+    // Also filter sidebar list to show source notes
+    renderList(matched.length > 0 ? matched : undefined);
   } catch (e) {
     status.textContent = 'Fehler: ' + e.message;
   }
