@@ -1,5 +1,5 @@
 const CACHE_NAME = 'notizen-v2';
-const ASSETS = ['/', '/index.html', '/manifest.json'];
+const ASSETS = ['/notizen-pwa/', '/notizen-pwa/index.html', '/notizen-pwa/manifest.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
