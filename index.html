@@ -910,6 +910,7 @@ function openNote(id) {
   closeSidebar();
 }
 
+let _uploadDebounce = null;
 function saveCurrentNote() {
   if (!currentNoteId) return;
   const note = notes.find(n => n.id === currentNoteId);
@@ -922,6 +923,9 @@ function saveCurrentNote() {
     note.modified = new Date().toISOString();
     saveNotesToStorage();
     renderTabBar();
+    // Auto-upload 8s after last change
+    clearTimeout(_uploadDebounce);
+    _uploadDebounce = setTimeout(() => syncNow(), 8000);
   }
 }
 
