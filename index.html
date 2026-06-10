@@ -1193,7 +1193,7 @@ function saveTabState() {
 function newNote() {
   saveCurrentNote();
   const id = Date.now().toString();
-  const note = { id, title: '', content: '', modified: new Date().toISOString() };
+  const note = { id, title: '', content: '', modified: localISO() };
   notes.unshift(note);
   openTabs.push(id);
   switchTab(id);
