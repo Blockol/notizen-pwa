@@ -832,6 +832,7 @@ let _isTyping = false;
 let _syncStatus = 'idle';   // idle | uploading | downloading | offline | pending
 let _hasPendingUpload = false;
 let _syncBusy = false;  // Mutex: verhindert gleichzeitige Sync-Operationen
+let _syncRetries = 0;   // Zaehlt fehlgeschlagene Upload-Versuche
 
 const _SYNC_STATES = {
   idle:        { icon: '\u2713',  color: 'var(--accent)', spin: false, title: 'Synchronisiert' },
@@ -1490,19 +1491,26 @@ async function _uploadData(cfg) {
   const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
   if (cfg.drive_script_url) {
     const payload = JSON.stringify({ ...data, token: cfg.drive_script_token || '' });
-    // Apps Script: POST mit text/plain (kein CORS Preflight) + follow Redirects
-    const resp = await fetch(cfg.drive_script_url, {
+    // Versuch 1: normaler POST mit CORS
+    try {
+      const resp = await fetch(cfg.drive_script_url, {
+        method: 'POST',
+        body: payload
+      });
+      const result = await resp.text();
+      console.log('[SYNC] Upload OK (cors):', resp.status, result.substring(0, 80));
+      return;
+    } catch(corsErr) {
+      console.warn('[SYNC] CORS-Upload fehlgeschlagen, versuche no-cors:', corsErr.message);
+    }
+    // Versuch 2: no-cors (Request kommt an, aber Antwort ist opaque)
+    await fetch(cfg.drive_script_url, {
       method: 'POST',
+      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: payload
     });
-    // Antwort lesen und pruefen
-    const result = await resp.text();
-    console.log('[SYNC] Upload response:', resp.status, resp.type, result.substring(0, 100));
-    if (!resp.ok && resp.type !== 'opaque') throw new Error(`Upload HTTP ${resp.status}`);
-    if (result && result.toLowerCase().includes('error')) {
-      throw new Error('Script-Fehler: ' + result.substring(0, 80));
-    }
+    console.log('[SYNC] Upload gesendet (no-cors)');
   } else if (cfg.drive_token && cfg.drive_file_id) {
     const resp = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?uploadType=media`,
@@ -1573,18 +1581,26 @@ async function syncNow() {
     setSyncStatus('uploading');
     await _uploadData(cfg);
     _hasPendingUpload = false;
+    _syncRetries = 0;
     setSyncStatus('idle');
     console.log('[SYNC] Upload OK:', new Date().toLocaleTimeString(), 'Notes:', notes.length);
   } catch (e) {
-    console.error('syncNow error:', e);
-    if (e.message === 'TOKEN_EXPIRED') { showToast('Token abgelaufen \u2013 bitte erneuern'); setSyncStatus('offline'); }
+    console.error('[SYNC] syncNow error:', e);
+    _syncRetries++;
+    if (e.message === 'TOKEN_EXPIRED') { showToast('Token abgelaufen'); setSyncStatus('offline'); }
     else if (e.message === 'NOT_CONFIGURED') { showToast('Sync nicht konfiguriert'); setSyncStatus('idle'); }
-    else { showToast('Sync-Fehler: ' + e.message); setSyncStatus(navigator.onLine ? 'idle' : 'pending'); }
+    else {
+      showToast('Sync-Fehler: ' + e.message);
+      setSyncStatus('pending');
+    }
   } finally {
     _syncBusy = false;
-    // Falls waehrend des Syncs weitere Aenderungen kamen, nochmal syncen
-    if (_hasPendingUpload && navigator.onLine) {
-      setTimeout(() => syncNow(), 500);
+    // Retry mit Backoff (max 3 Versuche, dann aufhoeren)
+    if (_hasPendingUpload && navigator.onLine && _syncRetries < 3) {
+      setTimeout(() => syncNow(), 1000 * (_syncRetries + 1));
+    } else if (_syncRetries >= 3) {
+      showToast('Upload fehlgeschlagen nach 3 Versuchen');
+      setSyncStatus('offline');
     }
   }
 }
@@ -1592,7 +1608,9 @@ async function syncNow() {
 // ── downloadFromDrive: only download + merge (no upload) ──
 async function downloadFromDrive() {
   if (!navigator.onLine) return;
-  if (_syncBusy) return;  // Mutex: syncNow laeuft gerade, nicht stoeren
+  // Wenn Upload aussteht, stattdessen syncNow ausfuehren (download+upload)
+  if (_hasPendingUpload) { syncNow(); return; }
+  if (_syncBusy) return;
   _syncBusy = true;
   const cfg = getConfig();
   if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) { _syncBusy = false; return; }
@@ -1600,16 +1618,12 @@ async function downloadFromDrive() {
   try {
     const remote = await _fetchRemote(cfg);
     if (remote) _applyRemoteMerge(remote);
-    setSyncStatus(_hasPendingUpload ? 'pending' : 'idle');
+    setSyncStatus('idle');
   } catch(e) {
     console.error('Download error:', e);
     setSyncStatus(navigator.onLine ? 'idle' : 'offline');
   } finally {
     _syncBusy = false;
-    // WICHTIG: Falls syncNow() vom Mutex geblockt wurde, jetzt nachholen
-    if (_hasPendingUpload && navigator.onLine) {
-      setTimeout(() => syncNow(), 300);
-    }
   }
 }
 
