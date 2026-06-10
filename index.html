@@ -831,6 +831,7 @@ let _isTyping = false;
 // Sync state
 let _syncStatus = 'idle';   // idle | uploading | downloading | offline | pending
 let _hasPendingUpload = false;
+let _syncBusy = false;  // Mutex: verhindert gleichzeitige Sync-Operationen
 
 const _SYNC_STATES = {
   idle:        { icon: '\u2713',  color: 'var(--accent)', spin: false, title: 'Synchronisiert' },
@@ -1464,9 +1465,12 @@ async function _fetchRemote(cfg) {
     const url = cfg.drive_script_url +
       (cfg.drive_script_url.includes('?') ? '&' : '?') +
       'token=' + encodeURIComponent(cfg.drive_script_token || '');
-    const resp = await fetch(url);
+    const resp = await fetch(url, { redirect: 'follow' });
     if (!resp.ok) throw new Error(`Script HTTP ${resp.status}`);
-    return await resp.json();
+    const text = await resp.text();
+    if (!text || !text.trim()) return null;
+    try { return JSON.parse(text); }
+    catch(_) { console.warn('Script returned non-JSON:', text.substring(0, 200)); return null; }
   } else if (cfg.drive_token && cfg.drive_file_id) {
     const resp = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?alt=media`,
@@ -1484,9 +1488,17 @@ async function _uploadData(cfg) {
   if (cfg.drive_script_url) {
     const resp = await fetch(cfg.drive_script_url, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      redirect: 'follow',
       body: JSON.stringify({ ...data, token: cfg.drive_script_token || '' })
     });
-    if (!resp.ok) throw new Error(`Script HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error(`Upload fehlgeschlagen (HTTP ${resp.status})`);
+    // Apps Script Antwort pruefen
+    const result = await resp.text();
+    if (result && result.toLowerCase().includes('error')) {
+      console.warn('Script upload response:', result);
+      throw new Error('Upload vom Server abgelehnt');
+    }
   } else if (cfg.drive_token && cfg.drive_file_id) {
     const resp = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?uploadType=media`,
@@ -1542,8 +1554,10 @@ function _applyRemoteMerge(remote) {
 // ── syncNow: merge-then-upload (prevents overwriting other devices' changes) ──
 async function syncNow() {
   if (!navigator.onLine) { _hasPendingUpload = true; setSyncStatus('pending'); return; }
+  if (_syncBusy) { _hasPendingUpload = true; return; }  // Mutex: warte bis vorherige Operation fertig
+  _syncBusy = true;
   const cfg = getConfig();
-  if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) return;
+  if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) { _syncBusy = false; return; }
 
   try {
     // Step 1: Download remote & merge FIRST — critical to not overwrite other devices
@@ -1557,17 +1571,26 @@ async function syncNow() {
     _hasPendingUpload = false;
     setSyncStatus('idle');
   } catch (e) {
+    console.error('syncNow error:', e);
     if (e.message === 'TOKEN_EXPIRED') { showToast('Token abgelaufen \u2013 bitte erneuern'); setSyncStatus('offline'); }
     else if (e.message === 'NOT_CONFIGURED') { showToast('Sync nicht konfiguriert'); setSyncStatus('idle'); }
-    else { setSyncStatus(navigator.onLine ? 'idle' : 'pending'); }
+    else { showToast('Sync-Fehler: ' + e.message); setSyncStatus(navigator.onLine ? 'idle' : 'pending'); }
+  } finally {
+    _syncBusy = false;
+    // Falls waehrend des Syncs weitere Aenderungen kamen, nochmal syncen
+    if (_hasPendingUpload && navigator.onLine) {
+      setTimeout(() => syncNow(), 500);
+    }
   }
 }
 
 // ── downloadFromDrive: only download + merge (no upload) ──
 async function downloadFromDrive() {
   if (!navigator.onLine) return;
+  if (_syncBusy) return;  // Mutex: syncNow laeuft gerade, nicht stoeren
+  _syncBusy = true;
   const cfg = getConfig();
-  if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) return;
+  if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) { _syncBusy = false; return; }
   setSyncStatus('downloading');
   try {
     const remote = await _fetchRemote(cfg);
@@ -1576,6 +1599,8 @@ async function downloadFromDrive() {
   } catch(e) {
     console.error('Download error:', e);
     setSyncStatus(navigator.onLine ? 'idle' : 'offline');
+  } finally {
+    _syncBusy = false;
   }
 }
 
