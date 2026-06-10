@@ -820,6 +820,14 @@ let collapsedFolders = new Set();
 let currentNoteId = null;
 let openTabs = [];
 let activeTabId = null;
+// Lokale ISO-Zeit (wie Python datetime.now().isoformat()) statt UTC
+function localISO() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + 'T' +
+         p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' +
+         String(d.getMilliseconds()).padStart(3, '0');
+}
 let aiSelectedText = '';
 let aiResult = '';
 let aiSearchActive = false;
@@ -863,7 +871,7 @@ function loadNotesFromStorage() {
 }
 
 function saveNotesToStorage() {
-  const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
+  const data = { notes, folders, version: 1, last_modified: localISO() };
   localStorage.setItem(DATA_KEY, JSON.stringify(data));
 }
 
@@ -1214,7 +1222,7 @@ function saveLocalImmediate() {
     const titleChanged = note.title !== newTitle;
     note.title = newTitle;
     note.content = newContent;
-    note.modified = new Date().toISOString();
+    note.modified = localISO();
     saveNotesToStorage();
     if (titleChanged) { renderTabBar(); renderList(); }
     // Debounce Upload: 1s nach letzter Aenderung
@@ -1462,7 +1470,7 @@ function exportTxt() {
 }
 
 function exportJson() {
-  const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
+  const data = { notes, folders, version: 1, last_modified: localISO() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1504,7 +1512,7 @@ async function _fetchRemote(cfg) {
 }
 
 async function _uploadData(cfg) {
-  const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
+  const data = { notes, folders, version: 1, last_modified: localISO() };
   if (cfg.drive_script_url) {
     const payload = JSON.stringify({ ...data, token: cfg.drive_script_token || '' });
     // Versuch 1: normaler POST mit CORS
@@ -1826,7 +1834,7 @@ function renameNote(id) {
   const newTitle = prompt('Neuer Titel:', note.title || '');
   if (newTitle === null) return;
   note.title = newTitle.trim() || 'Unbenannte Notiz';
-  note.modified = new Date().toISOString();
+  note.modified = localISO();
   saveNotesToStorage();
   renderTabBar();
   renderList();
@@ -1956,6 +1964,22 @@ if ('serviceWorker' in navigator) {
 }
 
 notes = loadNotesFromStorage(); // also sets folders
+
+// Migration: UTC-Timestamps (mit Z) in Lokalzeit umwandeln
+(function() {
+  let migrated = false;
+  for (const n of notes) {
+    if (n.modified && n.modified.endsWith('Z')) {
+      const d = new Date(n.modified);
+      const p = v => String(v).padStart(2, '0');
+      n.modified = d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + 'T' +
+                   p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' +
+                   String(d.getMilliseconds()).padStart(3, '0');
+      migrated = true;
+    }
+  }
+  if (migrated) { saveNotesToStorage(); console.log('[SYNC] UTC→Lokal Migration durchgefuehrt'); }
+})();
 
 // Restore state
 const initCfg = getConfig();
