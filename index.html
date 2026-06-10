@@ -828,6 +828,32 @@ function localISO() {
          p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' +
          String(d.getMilliseconds()).padStart(3, '0');
 }
+// 3-Wege-Text-Merge: kombiniert Aenderungen von beiden Geraeten
+function textMerge3(base, local, remote) {
+  if (local === remote) return local;
+  if (local === base) return remote;
+  if (remote === base) return local;
+  // Gemeinsamen Anfang finden (unveraendert)
+  let i = 0;
+  const minAll = Math.min(base.length, local.length, remote.length);
+  while (i < minAll && base[i] === local[i] && base[i] === remote[i]) i++;
+  // Gemeinsames Ende finden (unveraendert)
+  let j = 0;
+  const maxJ = Math.min(base.length - i, local.length - i, remote.length - i);
+  while (j < maxJ &&
+         base[base.length-1-j] === local[local.length-1-j] &&
+         base[base.length-1-j] === remote[remote.length-1-j]) j++;
+  const prefix = base.slice(0, i);
+  const suffix = j > 0 ? base.slice(-j) : '';
+  const bMid = base.slice(i, j > 0 ? base.length-j : undefined);
+  const lMid = local.slice(i, j > 0 ? local.length-j : undefined);
+  const rMid = remote.slice(i, j > 0 ? remote.length-j : undefined);
+  if (lMid === bMid) return prefix + rMid + suffix;
+  if (rMid === bMid) return prefix + lMid + suffix;
+  // Beide aenderten dieselbe Stelle — beide behalten
+  return prefix + lMid + rMid + suffix;
+}
+
 let aiSelectedText = '';
 let aiResult = '';
 let aiSearchActive = false;
@@ -1512,7 +1538,9 @@ async function _fetchRemote(cfg) {
 }
 
 async function _uploadData(cfg) {
-  const data = { notes, folders, version: 1, last_modified: localISO() };
+  // _base ist lokal — nicht hochladen
+  const cleanNotes = notes.map(n => { const {_base, ...rest} = n; return rest; });
+  const data = { notes: cleanNotes, folders, version: 1, last_modified: localISO() };
   if (cfg.drive_script_url) {
     const payload = JSON.stringify({ ...data, token: cfg.drive_script_token || '' });
     // Versuch 1: normaler POST mit CORS
@@ -1574,14 +1602,26 @@ function _applyRemoteMerge(remote) {
   for (const id of allIds) {
     const l = localById[id], r = remoteById[id];
     if (l && r) {
-      const localWins = (l.modified||'') >= (r.modified||'');
-      merged.push(localWins ? l : r);
-      // Debug fuer aktive Notiz
-      if (id === currentNoteId) {
-        curNoteInfo = localWins
-          ? 'LOCAL gewinnt: L=' + (l.modified||'?').slice(11,23) + ' >= R=' + (r.modified||'?').slice(11,23)
-          : 'REMOTE gewinnt: R=' + (r.modified||'?').slice(11,23) + ' > L=' + (l.modified||'?').slice(11,23);
-        if (!localWins) curNoteInfo += ' | Inhalt: "' + (r.content||'').slice(0,30) + '..."';
+      const base = l._base || '';
+      const localChanged = base && l.content !== base;
+      const remoteChanged = base && r.content !== base;
+
+      if (localChanged && remoteChanged && l.content !== r.content) {
+        // 3-Wege-Merge: beide haben seit letztem Sync geaendert
+        const mergedContent = textMerge3(base, l.content, r.content);
+        const mergedTitle = (l.modified||'') >= (r.modified||'') ? l.title : r.title;
+        const result = {...l, content: mergedContent, title: mergedTitle, modified: localISO()};
+        merged.push(result);
+        if (id === currentNoteId) curNoteInfo = '3-WAY MERGE: base=' + base.slice(0,15) + '... → "' + mergedContent.slice(0,30) + '..."';
+      } else {
+        // Standard: neuerer Timestamp gewinnt
+        const localWins = (l.modified||'') >= (r.modified||'');
+        merged.push(localWins ? l : r);
+        if (id === currentNoteId) {
+          curNoteInfo = localWins
+            ? 'LOCAL gewinnt: L=' + (l.modified||'?').slice(11,23) + ' >= R=' + (r.modified||'?').slice(11,23)
+            : 'REMOTE gewinnt: R=' + (r.modified||'?').slice(11,23) + ' > L=' + (l.modified||'?').slice(11,23);
+        }
       }
     } else {
       merged.push(l || r);
@@ -1643,6 +1683,9 @@ async function syncNow() {
       if (cur) _dbg('Upload Notiz: "' + (cur.content||'').slice(0,40) + '..." mod=' + (cur.modified||'').slice(11,23));
     }
     await _uploadData(cfg);
+    // Nach erfolgreichem Sync: base_content aktualisieren
+    for (const n of notes) n._base = n.content;
+    saveNotesToStorage();
     _hasPendingUpload = false;
     _syncRetries = 0;
     setSyncStatus('idle');
@@ -1679,7 +1722,11 @@ async function downloadFromDrive() {
   setSyncStatus('downloading');
   try {
     const remote = await _fetchRemote(cfg);
-    if (remote) _applyRemoteMerge(remote);
+    if (remote) {
+      _applyRemoteMerge(remote);
+      // base_content aktualisieren (kein Upload noetig = keine lokalen Aenderungen)
+      for (const n of notes) if (!n._base) n._base = n.content;
+    }
     setSyncStatus('idle');
   } catch(e) {
     console.error('Download error:', e);
@@ -1979,6 +2026,12 @@ notes = loadNotesFromStorage(); // also sets folders
     }
   }
   if (migrated) { saveNotesToStorage(); console.log('[SYNC] UTC→Lokal Migration durchgefuehrt'); }
+  // base_content initialisieren (fuer 3-Wege-Merge)
+  let baseInit = false;
+  for (const n of notes) {
+    if (!n._base) { n._base = n.content; baseInit = true; }
+  }
+  if (baseInit) saveNotesToStorage();
 })();
 
 // Restore state
