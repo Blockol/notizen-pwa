@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#1e1e1e">
 <title>Notizen</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,10 +14,10 @@
 <style>
   :root {
     /* Obsidian dark theme color palette */
-    --bg:      #000000;   /* --background-primary: editor area */
-    --bg2:     #1e1e1e;   /* --background-secondary: sidebar/rail/tabbar */
-    --bg3:     #111111;   /* --background-primary-alt: hover/active */
-    --border:  #2e2e2e;   /* solid ~rgba(255,255,255,0.1) */
+    --bg:      #1e1e1e;   /* --background-primary: editor area */
+    --bg2:     #171717;   /* --background-secondary: sidebar/rail/tabbar */
+    --bg3:     #252525;   /* --background-primary-alt: hover/active */
+    --border:  #333333;   /* solid ~rgba(255,255,255,0.12) */
     --accent:  #00ff88;   /* --interactive-accent */
     --accent2: #00cc66;
     --text:    #dcddde;   /* --text-normal */
@@ -250,7 +250,7 @@
   /* ── SETTINGS OVERLAY (backdrop + centered modal) ── */
   #settings-overlay {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.55); z-index: 100; display: none;
+    background: rgba(0,0,0,0.30); z-index: 100; display: none;
     align-items: center; justify-content: center;
   }
   #settings-overlay.visible { display: flex; }
@@ -394,6 +394,106 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   #rail-sync-btn.spinning { animation: spin .8s linear infinite; color: var(--accent); }
 
+  /* ── FOLDER ITEMS ── */
+  .folder-row {
+    display: flex; align-items: center;
+    padding: 0 8px 0 14px; height: 32px; cursor: pointer; flex-shrink: 0;
+    transition: background .1s;
+  }
+  .folder-row:hover { background: rgba(255,255,255,0.05); }
+  .folder-arrow { font-size: 9px; color: var(--muted); width: 12px; flex-shrink: 0; }
+  .folder-icon { font-size: 12px; margin: 0 5px 0 2px; flex-shrink: 0; opacity: .75; }
+  .folder-name { font-size: 13px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .folder-menu-btn {
+    background: transparent; border: none; color: var(--muted);
+    font-size: 16px; cursor: pointer; padding: 0 2px; opacity: 0;
+    line-height: 1; transition: opacity .1s; flex-shrink: 0;
+  }
+  .folder-row:hover .folder-menu-btn { opacity: 1; }
+
+  /* ── SIDEBAR LABEL ROW ── */
+  #sidebar-label-row {
+    display: flex; align-items: center; padding: 6px 8px 4px 14px; flex-shrink: 0;
+  }
+  #sidebar-label-row span {
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    letter-spacing: 1px; text-transform: uppercase; flex: 1;
+  }
+  .sb-tool-btn {
+    background: transparent; border: none; color: var(--muted);
+    font-size: 14px; cursor: pointer; width: 24px; height: 24px;
+    border-radius: 4px; display: flex; align-items: center; justify-content: center;
+    transition: background .1s, color .1s;
+  }
+  .sb-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+  /* ── SEARCH RESULTS ── */
+  .search-result {
+    padding: 6px 14px; cursor: pointer; border-left: 2px solid transparent;
+    transition: background .1s;
+  }
+  .search-result:hover { background: rgba(255,255,255,0.05); }
+  .search-result.active { border-left-color: var(--accent); background: rgba(0,255,136,0.06); }
+  .sr-title { font-size: 13px; color: var(--text); font-weight: 500; }
+  .sr-title mark, .sr-preview mark {
+    background: rgba(255,200,0,0.3); color: var(--text);
+    border-radius: 2px; padding: 0 1px;
+  }
+  .sr-preview { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.5; word-break: break-word; }
+
+  /* ── FIND BAR ── */
+  #find-bar {
+    display: none; align-items: center; gap: 6px;
+    background: var(--bg2); border-top: 1px solid var(--border);
+    padding: 6px 10px; flex-shrink: 0;
+  }
+  #find-bar.visible { display: flex; }
+  #find-input {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius-s); padding: 5px 8px; color: var(--text);
+    font-family: var(--font); font-size: 13px; outline: none;
+  }
+  #find-input:focus { border-color: var(--accent); }
+  #find-count { font-size: 11px; color: var(--muted); white-space: nowrap; min-width: 42px; text-align: center; }
+  .find-nav-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    width: 28px; height: 28px; border-radius: var(--radius-s); cursor: pointer;
+    font-size: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .find-nav-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+  #find-close {
+    background: transparent; border: none; color: var(--muted);
+    font-size: 18px; cursor: pointer; padding: 0 2px; flex-shrink: 0;
+  }
+  #find-close:hover { color: var(--text); }
+
+  /* ── CONTEXT SHEET ── */
+  #ctx-backdrop {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.45); z-index: 199; display: none;
+  }
+  #ctx-backdrop.visible { display: block; }
+  #ctx-sheet {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg2); border-top: 1px solid var(--border);
+    border-radius: var(--radius-l) var(--radius-l) 0 0;
+    z-index: 200; transform: translateY(100%);
+    transition: transform .22s ease;
+    padding-bottom: calc(8px + var(--safe-bot));
+  }
+  #ctx-sheet.visible { transform: translateY(0); }
+  #ctx-sheet-title {
+    padding: 14px 20px 10px; font-size: 12px; font-weight: 600;
+    color: var(--muted); border-bottom: 1px solid var(--border);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ctx-item {
+    padding: 14px 20px; font-size: 14px; color: var(--text); cursor: pointer;
+    transition: background .1s;
+  }
+  .ctx-item:active { background: rgba(255,255,255,0.06); }
+  .ctx-item.danger { color: var(--danger); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -474,7 +574,10 @@
       <div id="ai-chat-sources-label" style="display:none">Quellen:</div>
       <div id="ai-chat-sources"></div>
     </div>
-    <div id="sidebar-label">NOTIZEN</div>
+    <div id="sidebar-label-row">
+      <span>NOTIZEN</span>
+      <button class="sb-tool-btn" onclick="newFolder()" title="Neuer Ordner">&#128193;+</button>
+    </div>
     <div id="notes-list"></div>
   </div>
 
@@ -505,12 +608,20 @@
       <input id="note-title-input" type="text" placeholder="Titel..." autocomplete="off" spellcheck="true">
       <div id="note-date"></div>
       <textarea id="note-content-input" placeholder="Schreib deine Notiz hier..." spellcheck="true"></textarea>
+      <div id="find-bar">
+        <input id="find-input" type="search" placeholder="Im Text suchen..." oninput="onFindInput()" onkeydown="onFindKeydown(event)" autocomplete="off">
+        <span id="find-count"></span>
+        <button class="find-nav-btn" onclick="findPrev()" title="Vorheriger">&#8593;</button>
+        <button class="find-nav-btn" onclick="findNext()" title="N&auml;chster">&#8595;</button>
+        <button id="find-close" onclick="closeFindBar()" title="Schlie&szlig;en">&#10005;</button>
+      </div>
       <div id="ai-toolbar">
         <div class="ai-chip ai-chip-custom" onclick="openAI('custom')">&#10022; KI-Aktion...</div>
         <div class="ai-chip" onclick="openAI('summarize')">&#128221; Zusammenfassen</div>
         <div class="ai-chip" onclick="openAI('improve')">&#9999;&#65039; Verbessern</div>
-        <div class="ai-chip" onclick="openAI('translate')">&#127757; Uebersetzen</div>
+        <div class="ai-chip" onclick="openAI('rule')">&#128203; Regel erstellen</div>
         <div class="ai-chip" onclick="openAI('ideas')">&#128161; Ideen</div>
+        <div class="ai-chip" onclick="openFindBar()" title="Im Text suchen">&#128269; Suchen</div>
       </div>
     </div>
 
@@ -681,11 +792,20 @@
 <div id="toast"></div>
 <div id="ptr-indicator"></div>
 
+<!-- CONTEXT SHEET -->
+<div id="ctx-backdrop" onclick="closeCtxSheet()"></div>
+<div id="ctx-sheet">
+  <div id="ctx-sheet-title"></div>
+  <div id="ctx-items"></div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────
 let notes = [];
+let folders = [];
+let collapsedFolders = new Set();
 let currentNoteId = null;
 let openTabs = [];
 let activeTabId = null;
@@ -693,6 +813,11 @@ let aiSelectedText = '';
 let aiResult = '';
 let aiSearchActive = false;
 let sidebarOpen = true;
+// Find in note state
+let findMatches = [];
+let findIdx = 0;
+// Hold-to-open-menu (mobile)
+let _holdTimer = null;
 
 const CONFIG_KEY = 'notizen_config';
 const DATA_KEY = 'notizen_data';
@@ -705,12 +830,13 @@ function setConfig(cfg) { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
 function loadNotesFromStorage() {
   try {
     const d = JSON.parse(localStorage.getItem(DATA_KEY));
-    return d ? d.notes || [] : [];
+    if (d) { folders = d.folders || []; return d.notes || []; }
+    return [];
   } catch { return []; }
 }
 
 function saveNotesToStorage() {
-  const data = { notes, version: 1, last_modified: new Date().toISOString() };
+  const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
   localStorage.setItem(DATA_KEY, JSON.stringify(data));
 }
 
@@ -764,28 +890,91 @@ function setRailActive(id) {
 // ─────────────────────────────────────────────
 //  NOTES LIST
 // ─────────────────────────────────────────────
+function hlText(text, q) {
+  if (!q) return escHtml(text);
+  const escaped = escHtml(text);
+  const qEsc = escHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp(qEsc, 'gi'), m => `<mark>${m}</mark>`);
+}
+
+function noteItemHtml(n, isChild) {
+  const pad = isChild ? 'padding-left:28px;' : '';
+  return `<div class="note-item${isChild?' child':''} ${n.id===activeTabId?'active':''}"
+    onclick="openNote('${escHtml(n.id)}')"
+    oncontextmenu="event.preventDefault();openNoteMenu('${escHtml(n.id)}')"
+    ontouchstart="startNoteHold('${escHtml(n.id)}')" ontouchend="cancelNoteHold()" ontouchmove="cancelNoteHold()">
+    <div class="note-item-inner" style="${pad}">
+      <div class="note-title">${escHtml(n.title || 'Unbenannte Notiz')}</div>
+      <div class="note-date">${(n.modified||'').slice(0,10)}</div>
+    </div>
+  </div>`;
+}
+
 function renderList(filteredNotes) {
   const list = document.getElementById('notes-list');
   const q = document.getElementById('search-input').value.toLowerCase().trim();
 
-  let toShow = filteredNotes || notes.filter(n =>
-    !q || (n.title||'').toLowerCase().includes(q) || (n.content||'').toLowerCase().includes(q)
-  ).sort((a,b) => (a.id||'').localeCompare(b.id||''));
-
-  if (!toShow.length) {
-    list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:40px 20px;">' +
-      (q ? 'Keine Treffer' : 'Noch keine Notizen.') + '</div>';
+  // AI search results: plain list
+  if (filteredNotes) {
+    list.innerHTML = filteredNotes.length
+      ? filteredNotes.map(n => noteItemHtml(n, false)).join('')
+      : '<div style="text-align:center;color:var(--muted);font-size:12px;padding:40px 20px;">Keine Ergebnisse</div>';
     return;
   }
 
-  list.innerHTML = toShow.map(n => `
-    <div class="note-item ${n.id===activeTabId?'active':''}" onclick="openNote('${escHtml(n.id)}')">
-      <div class="note-item-inner">
-        <div class="note-title">${escHtml(n.title || 'Unbenannte Notiz')}</div>
-        <div class="note-date">${(n.modified||'').slice(0,10)}</div>
-      </div>
-    </div>
-  `).join('');
+  // Search mode: highlighted results with preview
+  if (q) {
+    const matches = notes.filter(n =>
+      (n.title||'').toLowerCase().includes(q) || (n.content||'').toLowerCase().includes(q)
+    ).sort((a,b) => (a.id||'').localeCompare(b.id||''));
+
+    if (!matches.length) {
+      list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:40px 20px;">Keine Treffer</div>';
+      return;
+    }
+    list.innerHTML = matches.map(n => {
+      const titleHl = hlText(n.title || 'Unbenannte Notiz', q);
+      const content = n.content || '';
+      const cLower = content.toLowerCase();
+      const qIdx = cLower.indexOf(q);
+      let preview = '';
+      if (qIdx >= 0) {
+        const s = Math.max(0, qIdx - 40);
+        const snippet = escHtml(content.slice(s, qIdx + q.length + 80));
+        const qEscRe = escHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const hl = snippet.replace(new RegExp(qEscRe, 'gi'), m => `<mark>${m}</mark>`);
+        preview = `<div class="sr-preview">${s > 0 ? '...' : ''}${hl}...</div>`;
+      }
+      return `<div class="search-result ${n.id===activeTabId?'active':''}" onclick="openNote('${escHtml(n.id)}')">
+        <div class="sr-title">${titleHl}</div>${preview}
+      </div>`;
+    }).join('');
+    return;
+  }
+
+  // Files mode: folders + root notes
+  const allSorted = [...notes].sort((a,b) => (a.id||'').localeCompare(b.id||''));
+  const folderNoteIds = new Set(folders.flatMap(f => f.note_ids || []));
+  let html = '';
+
+  for (const folder of [...folders].sort((a,b) => (a.id||'').localeCompare(b.id||''))) {
+    const col = collapsedFolders.has(folder.id);
+    html += `<div class="folder-row" onclick="toggleFolder('${escHtml(folder.id)}')">
+      <span class="folder-arrow">${col ? '&#9654;' : '&#9660;'}</span>
+      <span class="folder-icon">&#128193;</span>
+      <span class="folder-name">${escHtml(folder.name)}</span>
+      <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${escHtml(folder.id)}','${escHtml(folder.name)}')" title="Optionen">&#8942;</button>
+    </div>`;
+    if (!col) {
+      const childNotes = (folder.note_ids || []).map(id => allSorted.find(n => n.id === id)).filter(Boolean);
+      html += childNotes.map(n => noteItemHtml(n, true)).join('');
+    }
+  }
+
+  const rootNotes = allSorted.filter(n => !folderNoteIds.has(n.id));
+  html += rootNotes.map(n => noteItemHtml(n, false)).join('');
+
+  list.innerHTML = html || '<div style="text-align:center;color:var(--muted);font-size:12px;padding:40px 20px;">Noch keine Notizen.</div>';
 }
 
 function onSearchInput() {
@@ -1026,7 +1215,7 @@ function updateStatusBar() {
 const AI_PROMPTS = {
   summarize: 'Fasse den Text kurz und praegnant zusammen.',
   improve: 'Verbessere die Rechtschreibung und den Stil. Gib nur den verbesserten Text zurueck.',
-  translate: 'Uebersetze den Text ins Englische.',
+  rule: 'Forme den folgenden Text in eine strukturierte Regel im folgenden Markdown-Format um:\n\n## \uD83D\uDD39 Regel [Nummer]: [Kurzer Titel]\n\nKurze Situationsbeschreibung, wann diese Regel gilt.\n\n- **Bedingung oder Kontext** -> Konsequenz / Handlungsanweisung\n- Weitere Punkte falls vorhanden\n\n\uD83D\uDC49 Grundsatz: **Praegnante Zusammenfassung der Kernaussage**\n\nBeachte: Nur den Regelblock ausgeben, kein weiterer Text. Behalte alle wichtigen Informationen aus dem Originaltext bei. Nutze Fettschrift fuer Schluesselwoerter.',
   ideas: 'Entwickle basierend auf diesem Text kreative Ideen und Weiterentwicklungen.',
   custom: ''
 };
@@ -1163,7 +1352,7 @@ function applyTheme() {
   cfg.theme = theme;
   setConfig(cfg);
   document.documentElement.classList.toggle('light', theme === 'light');
-  document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#ffffff' : '#0a0a0a';
+  document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#ffffff' : '#1e1e1e';
   showToast('Theme geaendert');
 }
 
@@ -1205,7 +1394,7 @@ function exportTxt() {
 }
 
 function exportJson() {
-  const data = { notes, version: 1, last_modified: new Date().toISOString() };
+  const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1225,7 +1414,7 @@ async function syncNow() {
     // ── Apps Script Sync (kein Token-Ablauf) ──────────────
     try {
       const data = {
-        notes, version: 1,
+        notes, folders, version: 1,
         last_modified: new Date().toISOString(),
         token: cfg.drive_script_token || ''
       };
@@ -1246,7 +1435,7 @@ async function syncNow() {
     return;
   }
   try {
-    const data = { notes, version: 1, last_modified: new Date().toISOString() };
+    const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
     const resp = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?uploadType=media`,
       {
@@ -1286,7 +1475,7 @@ async function downloadFromDrive() {
     } else {
       return; // nichts konfiguriert
     }
-    // Merge: neuere Version gewinnt
+    // Merge notes: newer modified wins
     const localById = Object.fromEntries(notes.map(n => [n.id, n]));
     const remoteById = Object.fromEntries((remote.notes||[]).map(n => [n.id, n]));
     const allIds = new Set([...Object.keys(localById), ...Object.keys(remoteById)]);
@@ -1297,6 +1486,13 @@ async function downloadFromDrive() {
       else merged.push(l || r);
     }
     notes = merged;
+    // Merge folders: remote wins on conflict, local-only kept
+    if (remote.folders) {
+      const remoteMap = Object.fromEntries((remote.folders||[]).map(f => [f.id, f]));
+      const localMap = Object.fromEntries(folders.map(f => [f.id, f]));
+      const allFIds = new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]);
+      folders = [...allFIds].map(id => remoteMap[id] || localMap[id]);
+    }
     saveNotesToStorage();
     renderList();
   } catch(e) { console.error('Download error:', e); }
@@ -1321,14 +1517,211 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 'n') { e.preventDefault(); newNote(); }
   if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveCurrentNote(); showToast('Gespeichert'); }
   if (e.ctrlKey && e.key === 'w') { e.preventDefault(); if (activeTabId) closeTab(activeTabId); }
-  if (e.key === 'Escape') {
-    closeSettings();
-    closeAI();
-  }
+  if (e.key === 'Escape') { closeSettings(); closeAI(); closeFindBar(); closeCtxSheet(); }
 });
 
 // ── Content change listener ──
 document.getElementById('note-content-input').addEventListener('input', updateStatusBar);
+
+// ─────────────────────────────────────────────
+//  FOLDERS
+// ─────────────────────────────────────────────
+function newFolder() {
+  const name = prompt('Ordnername:');
+  if (!name || !name.trim()) return;
+  const id = 'folder_' + Date.now();
+  folders.push({ id, name: name.trim(), note_ids: [] });
+  saveNotesToStorage();
+  renderList();
+}
+
+function toggleFolder(id) {
+  if (collapsedFolders.has(id)) collapsedFolders.delete(id);
+  else collapsedFolders.add(id);
+  renderList();
+}
+
+function openFolderMenu(id, name) {
+  showCtxSheet(name, [
+    { label: 'Umbenennen', action: () => renameFolder(id, name) },
+    { label: 'Ordner l\u00f6schen (Notizen bleiben)', cls: 'danger', action: () => deleteFolder(id) },
+  ]);
+}
+
+function renameFolder(id, currentName) {
+  const newName = prompt('Neuer Name:', currentName);
+  if (!newName || !newName.trim()) return;
+  const f = folders.find(f => f.id === id);
+  if (f) { f.name = newName.trim(); saveNotesToStorage(); renderList(); }
+}
+
+function deleteFolder(id) {
+  if (!confirm('Ordner l\u00f6schen? Die Notizen bleiben erhalten.')) return;
+  folders = folders.filter(f => f.id !== id);
+  collapsedFolders.delete(id);
+  saveNotesToStorage();
+  renderList();
+}
+
+function moveNoteToFolder(noteId, folderId) {
+  folders.forEach(f => { f.note_ids = f.note_ids.filter(id => id !== noteId); });
+  if (folderId) {
+    const f = folders.find(f => f.id === folderId);
+    if (f && !f.note_ids.includes(noteId)) f.note_ids.push(noteId);
+  }
+  saveNotesToStorage();
+  renderList();
+}
+
+// ─────────────────────────────────────────────
+//  NOTE CONTEXT MENU (mobile: hold, desktop: right-click)
+// ─────────────────────────────────────────────
+function startNoteHold(id) {
+  _holdTimer = setTimeout(() => { cancelNoteHold(); openNoteMenu(id); }, 600);
+}
+
+function cancelNoteHold() {
+  if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
+}
+
+function openNoteMenu(id) {
+  const note = notes.find(n => n.id === id);
+  if (!note) return;
+  const items = [
+    { label: 'Umbenennen', action: () => renameNote(id) },
+  ];
+  folders.forEach(f => {
+    const inFolder = (f.note_ids || []).includes(id);
+    items.push({
+      label: inFolder ? `Aus "\u201C${f.name}\u201D entfernen` : `In \u201E${f.name}\u201C verschieben`,
+      action: () => moveNoteToFolder(id, inFolder ? null : f.id)
+    });
+  });
+  items.push({ label: 'Notiz l\u00f6schen', cls: 'danger', action: () => deleteNoteById(id) });
+  showCtxSheet(note.title || 'Unbenannte Notiz', items);
+}
+
+function renameNote(id) {
+  const note = notes.find(n => n.id === id);
+  if (!note) return;
+  const newTitle = prompt('Neuer Titel:', note.title || '');
+  if (newTitle === null) return;
+  note.title = newTitle.trim() || 'Unbenannte Notiz';
+  note.modified = new Date().toISOString();
+  saveNotesToStorage();
+  renderTabBar();
+  renderList();
+}
+
+function deleteNoteById(id) {
+  if (!confirm('Notiz l\u00f6schen?')) return;
+  notes = notes.filter(n => n.id !== id);
+  folders.forEach(f => { f.note_ids = (f.note_ids || []).filter(nid => nid !== id); });
+  closeTab(id);
+  saveNotesToStorage();
+  renderList();
+}
+
+// ─────────────────────────────────────────────
+//  CONTEXT SHEET
+// ─────────────────────────────────────────────
+let _ctxActions = [];
+
+function showCtxSheet(title, items) {
+  document.getElementById('ctx-sheet-title').textContent = title;
+  _ctxActions = items.map(item => item.action);
+  document.getElementById('ctx-items').innerHTML = items.map((item, i) =>
+    `<div class="ctx-item ${item.cls||''}" onclick="executeCtxItem(${i})">${escHtml(item.label)}</div>`
+  ).join('');
+  document.getElementById('ctx-backdrop').classList.add('visible');
+  document.getElementById('ctx-sheet').classList.add('visible');
+}
+
+function executeCtxItem(i) {
+  closeCtxSheet();
+  if (_ctxActions[i]) setTimeout(_ctxActions[i], 60);
+}
+
+function closeCtxSheet() {
+  document.getElementById('ctx-backdrop').classList.remove('visible');
+  document.getElementById('ctx-sheet').classList.remove('visible');
+}
+
+// ─────────────────────────────────────────────
+//  FIND IN NOTE
+// ─────────────────────────────────────────────
+function openFindBar() {
+  document.getElementById('find-bar').classList.add('visible');
+  setTimeout(() => document.getElementById('find-input').focus(), 80);
+}
+
+function closeFindBar() {
+  document.getElementById('find-bar').classList.remove('visible');
+  document.getElementById('find-input').value = '';
+  findMatches = []; findIdx = 0;
+  document.getElementById('find-count').textContent = '';
+}
+
+function onFindInput() {
+  const q = document.getElementById('find-input').value;
+  findMatches = _findOccurrences(q);
+  findIdx = 0;
+  if (findMatches.length) _scrollToMatch(0);
+  _updateFindCount();
+}
+
+function onFindKeydown(e) {
+  if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? findPrev() : findNext(); }
+  if (e.key === 'Escape') closeFindBar();
+}
+
+function findNext() {
+  if (!findMatches.length) return;
+  findIdx = (findIdx + 1) % findMatches.length;
+  _scrollToMatch(findIdx);
+  _updateFindCount();
+}
+
+function findPrev() {
+  if (!findMatches.length) return;
+  findIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
+  _scrollToMatch(findIdx);
+  _updateFindCount();
+}
+
+function _findOccurrences(q) {
+  if (!q) return [];
+  const content = document.getElementById('note-content-input').value;
+  const lower = content.toLowerCase();
+  const qLower = q.toLowerCase();
+  const pos = [];
+  let i = 0;
+  while (true) {
+    const idx = lower.indexOf(qLower, i);
+    if (idx === -1) break;
+    pos.push(idx);
+    i = idx + 1;
+  }
+  return pos;
+}
+
+function _scrollToMatch(idx) {
+  const ta = document.getElementById('note-content-input');
+  const q = document.getElementById('find-input').value;
+  const start = findMatches[idx];
+  ta.focus();
+  ta.setSelectionRange(start, start + q.length);
+  const lh = parseInt(getComputedStyle(ta).lineHeight) || 22;
+  const lines = ta.value.slice(0, start).split('\n').length - 1;
+  ta.scrollTop = Math.max(0, lines * lh - ta.clientHeight / 2);
+}
+
+function _updateFindCount() {
+  const q = document.getElementById('find-input').value;
+  const el = document.getElementById('find-count');
+  if (!q) { el.textContent = ''; return; }
+  el.textContent = findMatches.length ? `${findIdx + 1}/${findMatches.length}` : 'Keine';
+}
 
 // ─────────────────────────────────────────────
 //  AUTO-SAVE + SYNC
@@ -1343,7 +1736,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/notizen-pwa/sw.js').catch(() => {});
 }
 
-notes = loadNotesFromStorage();
+notes = loadNotesFromStorage(); // also sets folders
 
 // Restore state
 const initCfg = getConfig();
