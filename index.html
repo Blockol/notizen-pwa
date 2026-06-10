@@ -825,6 +825,9 @@ let findMatches = [];
 let findIdx = 0;
 // Hold-to-open-menu (mobile)
 let _holdTimer = null;
+// Typing guard: verhindert dass Download den Editor ueberschreibt waehrend User tippt
+let _typingTimer = null;
+let _isTyping = false;
 // Sync state
 let _syncStatus = 'idle';   // idle | uploading | downloading | offline | pending
 let _hasPendingUpload = false;
@@ -1521,14 +1524,17 @@ function _applyRemoteMerge(remote) {
   }
   saveNotesToStorage();
   renderList();
-  // Refresh active note editor if it changed remotely (no cursor jump)
+  // Refresh active note editor if it changed remotely — aber NICHT wenn User gerade tippt
   if (currentNoteId) {
     const updated = notes.find(n => n.id === currentNoteId);
     if (updated) {
       const ta = document.getElementById('note-content-input');
       const ti = document.getElementById('note-title-input');
-      if (ta.value !== (updated.content || '')) ta.value = updated.content || '';
-      if (ti.value !== (updated.title || '')) ti.value = updated.title || '';
+      // Typing-Guard: wenn User gerade tippt, Editor nicht ueberschreiben
+      if (!_isTyping) {
+        if (ta.value !== (updated.content || '')) ta.value = updated.content || '';
+        if (ti.value !== (updated.title || '')) ti.value = updated.title || '';
+      }
     }
   }
 }
@@ -1596,8 +1602,13 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Content change listeners ──
-document.getElementById('note-content-input').addEventListener('input', () => { updateStatusBar(); saveLocalImmediate(); });
-document.getElementById('note-title-input').addEventListener('input', saveLocalImmediate);
+function _markTyping() {
+  _isTyping = true;
+  clearTimeout(_typingTimer);
+  _typingTimer = setTimeout(() => { _isTyping = false; }, 3000);
+}
+document.getElementById('note-content-input').addEventListener('input', () => { updateStatusBar(); _markTyping(); saveLocalImmediate(); });
+document.getElementById('note-title-input').addEventListener('input', () => { _markTyping(); saveLocalImmediate(); });
 
 // ── Offline / Online detection ──
 window.addEventListener('offline', () => {
