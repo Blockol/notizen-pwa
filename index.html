@@ -1610,13 +1610,17 @@ function _applyRemoteMerge(remote) {
         // 3-Wege-Merge: beide haben seit letztem Sync geaendert
         const mergedContent = textMerge3(base, l.content, r.content);
         const mergedTitle = (l.modified||'') >= (r.modified||'') ? l.title : r.title;
-        const result = {...l, content: mergedContent, title: mergedTitle, modified: localISO()};
+        const result = {...l, content: mergedContent, title: mergedTitle, modified: localISO(), _base: mergedContent};
         merged.push(result);
+        _hasPendingUpload = true;  // Merge-Ergebnis muss hochgeladen werden
         if (id === currentNoteId) curNoteInfo = '3-WAY MERGE: base=' + base.slice(0,15) + '... → "' + mergedContent.slice(0,30) + '..."';
       } else {
         // Standard: neuerer Timestamp gewinnt
         const localWins = (l.modified||'') >= (r.modified||'');
-        merged.push(localWins ? l : r);
+        const winner = localWins ? l : r;
+        // Wenn Remote gewinnt: _base auf remote Content setzen (akzeptiert)
+        if (!localWins && r.content !== base) winner._base = r.content;
+        merged.push(winner);
         if (id === currentNoteId) {
           curNoteInfo = localWins
             ? 'LOCAL gewinnt: L=' + (l.modified||'?').slice(11,23) + ' >= R=' + (r.modified||'?').slice(11,23)
@@ -1724,8 +1728,9 @@ async function downloadFromDrive() {
     const remote = await _fetchRemote(cfg);
     if (remote) {
       _applyRemoteMerge(remote);
-      // base_content aktualisieren (kein Upload noetig = keine lokalen Aenderungen)
-      for (const n of notes) if (!n._base) n._base = n.content;
+      // _base NUR fuer komplett neue Notizen (ohne _base) setzen — NICHT fuer bestehende!
+      // Sonst wird 3-Wege-Merge verhindert weil _base == remote nach Download
+      for (const n of notes) if (n._base === undefined) n._base = n.content;
     }
     setSyncStatus('idle');
   } catch(e) {
@@ -2029,7 +2034,7 @@ notes = loadNotesFromStorage(); // also sets folders
   // base_content initialisieren (fuer 3-Wege-Merge)
   let baseInit = false;
   for (const n of notes) {
-    if (!n._base) { n._base = n.content; baseInit = true; }
+    if (n._base === undefined) { n._base = n.content; baseInit = true; }
   }
   if (baseInit) saveNotesToStorage();
 })();
