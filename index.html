@@ -1454,39 +1454,37 @@ function exportJson() {
 // ─────────────────────────────────────────────
 //  GOOGLE DRIVE SYNC
 // ─────────────────────────────────────────────
-async function syncNow() {
-  if (!navigator.onLine) { _hasPendingUpload = true; setSyncStatus('pending'); return; }
-  const cfg = getConfig();
-  setSyncStatus('uploading');
+
+// ── Shared helpers ────────────────────────────
+async function _fetchRemote(cfg) {
   if (cfg.drive_script_url) {
-    // ── Apps Script Sync (kein Token-Ablauf) ──────────────
-    try {
-      const data = {
-        notes, folders, version: 1,
-        last_modified: new Date().toISOString(),
-        token: cfg.drive_script_token || ''
-      };
-      const resp = await fetch(cfg.drive_script_url, {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      _hasPendingUpload = false;
-      setSyncStatus('idle');
-    } catch (e) {
-      setSyncStatus(navigator.onLine ? 'idle' : 'pending');
-      showToast('Sync-Fehler: ' + e.message);
-    }
-    return;
+    const url = cfg.drive_script_url +
+      (cfg.drive_script_url.includes('?') ? '&' : '?') +
+      'token=' + encodeURIComponent(cfg.drive_script_token || '');
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Script HTTP ${resp.status}`);
+    return await resp.json();
+  } else if (cfg.drive_token && cfg.drive_file_id) {
+    const resp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?alt=media`,
+      { headers: { 'Authorization': `Bearer ${cfg.drive_token}` } }
+    );
+    if (resp.status === 401) throw new Error('TOKEN_EXPIRED');
+    if (!resp.ok) throw new Error(`Drive HTTP ${resp.status}`);
+    return await resp.json();
   }
-  // ── Direkter Drive-Zugriff (Token nötig) ──────────────
-  if (!cfg.drive_token || !cfg.drive_file_id) {
-    setSyncStatus('idle');
-    showToast('Sync nicht konfiguriert (SETUP.md)');
-    return;
-  }
-  try {
-    const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
+  return null;
+}
+
+async function _uploadData(cfg) {
+  const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
+  if (cfg.drive_script_url) {
+    const resp = await fetch(cfg.drive_script_url, {
+      method: 'POST',
+      body: JSON.stringify({ ...data, token: cfg.drive_script_token || '' })
+    });
+    if (!resp.ok) throw new Error(`Script HTTP ${resp.status}`);
+  } else if (cfg.drive_token && cfg.drive_file_id) {
     const resp = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?uploadType=media`,
       {
@@ -1495,73 +1493,79 @@ async function syncNow() {
         body: JSON.stringify(data)
       }
     );
-    if (resp.status === 401) { setSyncStatus('idle'); showToast('Token abgelaufen \u2013 bitte erneuern'); return; }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    _hasPendingUpload = false;
-    setSyncStatus('idle');
-  } catch (e) {
-    setSyncStatus(navigator.onLine ? 'idle' : 'pending');
-    showToast('Sync-Fehler: ' + e.message);
+    if (resp.status === 401) throw new Error('TOKEN_EXPIRED');
+    if (!resp.ok) throw new Error(`Drive HTTP ${resp.status}`);
+  } else {
+    throw new Error('NOT_CONFIGURED');
   }
 }
 
+function _applyRemoteMerge(remote) {
+  // Merge notes: newer modified timestamp wins
+  const localById = Object.fromEntries(notes.map(n => [n.id, n]));
+  const remoteById = Object.fromEntries((remote.notes||[]).map(n => [n.id, n]));
+  const allIds = new Set([...Object.keys(localById), ...Object.keys(remoteById)]);
+  const merged = [];
+  for (const id of allIds) {
+    const l = localById[id], r = remoteById[id];
+    if (l && r) merged.push((l.modified||'') >= (r.modified||'') ? l : r);
+    else merged.push(l || r);
+  }
+  notes = merged;
+  // Merge folders: remote wins on conflict, local-only entries kept
+  if (remote.folders) {
+    const remoteMap = Object.fromEntries((remote.folders||[]).map(f => [f.id, f]));
+    const localMap = Object.fromEntries(folders.map(f => [f.id, f]));
+    const allFIds = new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]);
+    folders = [...allFIds].map(id => remoteMap[id] || localMap[id]);
+  }
+  saveNotesToStorage();
+  renderList();
+  // Refresh active note editor if it changed remotely (no cursor jump)
+  if (currentNoteId) {
+    const updated = notes.find(n => n.id === currentNoteId);
+    if (updated) {
+      const ta = document.getElementById('note-content-input');
+      const ti = document.getElementById('note-title-input');
+      if (ta.value !== (updated.content || '')) ta.value = updated.content || '';
+      if (ti.value !== (updated.title || '')) ti.value = updated.title || '';
+    }
+  }
+}
+
+// ── syncNow: merge-then-upload (prevents overwriting other devices' changes) ──
+async function syncNow() {
+  if (!navigator.onLine) { _hasPendingUpload = true; setSyncStatus('pending'); return; }
+  const cfg = getConfig();
+  if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) return;
+
+  try {
+    // Step 1: Download remote & merge FIRST — critical to not overwrite other devices
+    setSyncStatus('downloading');
+    const remote = await _fetchRemote(cfg);
+    if (remote) _applyRemoteMerge(remote);
+
+    // Step 2: Upload the merged result
+    setSyncStatus('uploading');
+    await _uploadData(cfg);
+    _hasPendingUpload = false;
+    setSyncStatus('idle');
+  } catch (e) {
+    if (e.message === 'TOKEN_EXPIRED') { showToast('Token abgelaufen \u2013 bitte erneuern'); setSyncStatus('offline'); }
+    else if (e.message === 'NOT_CONFIGURED') { showToast('Sync nicht konfiguriert'); setSyncStatus('idle'); }
+    else { setSyncStatus(navigator.onLine ? 'idle' : 'pending'); }
+  }
+}
+
+// ── downloadFromDrive: only download + merge (no upload) ──
 async function downloadFromDrive() {
   if (!navigator.onLine) return;
   const cfg = getConfig();
   if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) return;
   setSyncStatus('downloading');
   try {
-    let remote;
-    if (cfg.drive_script_url) {
-      // ── Apps Script Download ──────────────────────────
-      const url = cfg.drive_script_url +
-        (cfg.drive_script_url.includes('?') ? '&' : '?') +
-        'token=' + encodeURIComponent(cfg.drive_script_token || '');
-      const resp = await fetch(url);
-      if (!resp.ok) return;
-      remote = await resp.json();
-    } else if (cfg.drive_token && cfg.drive_file_id) {
-      // ── Direkter Drive-Zugriff ────────────────────────
-      const resp = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?alt=media`,
-        { headers: { 'Authorization': `Bearer ${cfg.drive_token}` } }
-      );
-      if (!resp.ok) return;
-      remote = await resp.json();
-    } else {
-      return; // nichts konfiguriert
-    }
-    // Merge notes: newer modified wins
-    const localById = Object.fromEntries(notes.map(n => [n.id, n]));
-    const remoteById = Object.fromEntries((remote.notes||[]).map(n => [n.id, n]));
-    const allIds = new Set([...Object.keys(localById), ...Object.keys(remoteById)]);
-    const merged = [];
-    for (const id of allIds) {
-      const l = localById[id], r = remoteById[id];
-      if (l && r) merged.push((l.modified||'') >= (r.modified||'') ? l : r);
-      else merged.push(l || r);
-    }
-    notes = merged;
-    // Merge folders: remote wins on conflict, local-only kept
-    if (remote.folders) {
-      const remoteMap = Object.fromEntries((remote.folders||[]).map(f => [f.id, f]));
-      const localMap = Object.fromEntries(folders.map(f => [f.id, f]));
-      const allFIds = new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]);
-      folders = [...allFIds].map(id => remoteMap[id] || localMap[id]);
-    }
-    saveNotesToStorage();
-    renderList();
-    // Refresh active note if it was updated remotely
-    if (currentNoteId) {
-      const updated = notes.find(n => n.id === currentNoteId);
-      if (updated) {
-        const ta = document.getElementById('note-content-input');
-        const ti = document.getElementById('note-title-input');
-        // Only overwrite if content actually changed (avoid cursor jump)
-        if (ta.value !== (updated.content || '')) ta.value = updated.content || '';
-        if (ti.value !== (updated.title || '')) ti.value = updated.title || '';
-      }
-    }
+    const remote = await _fetchRemote(cfg);
+    if (remote) _applyRemoteMerge(remote);
     setSyncStatus(_hasPendingUpload ? 'pending' : 'idle');
   } catch(e) {
     console.error('Download error:', e);
