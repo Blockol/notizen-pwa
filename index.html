@@ -1465,12 +1465,15 @@ async function _fetchRemote(cfg) {
     const url = cfg.drive_script_url +
       (cfg.drive_script_url.includes('?') ? '&' : '?') +
       'token=' + encodeURIComponent(cfg.drive_script_token || '');
-    const resp = await fetch(url, { redirect: 'follow' });
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Script HTTP ${resp.status}`);
     const text = await resp.text();
-    if (!text || !text.trim()) return null;
-    try { return JSON.parse(text); }
-    catch(_) { console.warn('Script returned non-JSON:', text.substring(0, 200)); return null; }
+    if (!text || !text.trim()) { console.warn('[SYNC] Download: leere Antwort'); return null; }
+    try {
+      const parsed = JSON.parse(text);
+      console.log('[SYNC] Download OK:', (parsed.notes||[]).length, 'Notizen');
+      return parsed;
+    } catch(_) { console.warn('[SYNC] Download non-JSON:', text.substring(0, 200)); return null; }
   } else if (cfg.drive_token && cfg.drive_file_id) {
     const resp = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(cfg.drive_file_id)}?alt=media`,
@@ -1486,18 +1489,19 @@ async function _fetchRemote(cfg) {
 async function _uploadData(cfg) {
   const data = { notes, folders, version: 1, last_modified: new Date().toISOString() };
   if (cfg.drive_script_url) {
+    const payload = JSON.stringify({ ...data, token: cfg.drive_script_token || '' });
+    // Apps Script: POST mit text/plain (kein CORS Preflight) + follow Redirects
     const resp = await fetch(cfg.drive_script_url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      redirect: 'follow',
-      body: JSON.stringify({ ...data, token: cfg.drive_script_token || '' })
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload
     });
-    if (!resp.ok) throw new Error(`Upload fehlgeschlagen (HTTP ${resp.status})`);
-    // Apps Script Antwort pruefen
+    // Antwort lesen und pruefen
     const result = await resp.text();
+    console.log('[SYNC] Upload response:', resp.status, resp.type, result.substring(0, 100));
+    if (!resp.ok && resp.type !== 'opaque') throw new Error(`Upload HTTP ${resp.status}`);
     if (result && result.toLowerCase().includes('error')) {
-      console.warn('Script upload response:', result);
-      throw new Error('Upload vom Server abgelehnt');
+      throw new Error('Script-Fehler: ' + result.substring(0, 80));
     }
   } else if (cfg.drive_token && cfg.drive_file_id) {
     const resp = await fetch(
@@ -1570,6 +1574,7 @@ async function syncNow() {
     await _uploadData(cfg);
     _hasPendingUpload = false;
     setSyncStatus('idle');
+    console.log('[SYNC] Upload OK:', new Date().toLocaleTimeString(), 'Notes:', notes.length);
   } catch (e) {
     console.error('syncNow error:', e);
     if (e.message === 'TOKEN_EXPIRED') { showToast('Token abgelaufen \u2013 bitte erneuern'); setSyncStatus('offline'); }
@@ -1601,6 +1606,10 @@ async function downloadFromDrive() {
     setSyncStatus(navigator.onLine ? 'idle' : 'offline');
   } finally {
     _syncBusy = false;
+    // WICHTIG: Falls syncNow() vom Mutex geblockt wurde, jetzt nachholen
+    if (_hasPendingUpload && navigator.onLine) {
+      setTimeout(() => syncNow(), 300);
+    }
   }
 }
 
