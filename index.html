@@ -430,6 +430,17 @@
     transition: background .1s, color .1s;
   }
   .sb-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+  #sort-dropdown {
+    position: relative; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; margin: 0 8px 4px; overflow: hidden; flex-shrink: 0;
+  }
+  #sort-dropdown button {
+    display: block; width: 100%; padding: 8px 14px; text-align: left;
+    background: transparent; border: none; color: var(--text);
+    font-size: 13px; cursor: pointer; transition: background .1s;
+  }
+  #sort-dropdown button:hover { background: rgba(255,255,255,0.07); }
+  #sort-dropdown button.active { color: var(--accent); font-weight: 600; }
 
   /* ── SEARCH RESULTS ── */
   .search-result {
@@ -580,7 +591,18 @@
     </div>
     <div id="sidebar-label-row">
       <span>NOTIZEN</span>
-      <button class="sb-tool-btn" onclick="newFolder()" title="Neuer Ordner">&#128193;+</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="sb-tool-btn" onclick="toggleSortMenu(event)" title="Sortierung" id="sort-menu-btn">&#8693;</button>
+        <button class="sb-tool-btn" onclick="newFolder()" title="Neuer Ordner">&#128193;+</button>
+      </div>
+    </div>
+    <div id="sort-dropdown" style="display:none;">
+      <button onclick="setSortMode('name_asc')">Dateiname (A – Z)</button>
+      <button onclick="setSortMode('name_desc')">Dateiname (Z – A)</button>
+      <button onclick="setSortMode('modified_desc')">Letzte Bearbeitung (neu – alt)</button>
+      <button onclick="setSortMode('modified_asc')">Letzte Bearbeitung (alt – neu)</button>
+      <button onclick="setSortMode('id_desc')">Erstellungszeitpunkt (neu – alt)</button>
+      <button onclick="setSortMode('id_asc')">Erstellungszeitpunkt (alt – neu)</button>
     </div>
     <div id="notes-list"></div>
   </div>
@@ -817,6 +839,7 @@
 let notes = [];
 let folders = [];
 let collapsedFolders = new Set();
+let sortMode = 'name_asc';
 let currentNoteId = null;
 let openTabs = [];
 let activeTabId = null;
@@ -971,6 +994,42 @@ function noteItemHtml(n, isChild) {
   </div>`;
 }
 
+function sortNotes(arr) {
+  const a = [...arr];
+  if (sortMode === 'name_asc')      return a.sort((x,y) => (x.title||'').toLowerCase().localeCompare((y.title||'').toLowerCase()));
+  if (sortMode === 'name_desc')     return a.sort((x,y) => (y.title||'').toLowerCase().localeCompare((x.title||'').toLowerCase()));
+  if (sortMode === 'modified_desc') return a.sort((x,y) => (y.modified||'').localeCompare(x.modified||''));
+  if (sortMode === 'modified_asc')  return a.sort((x,y) => (x.modified||'').localeCompare(y.modified||''));
+  if (sortMode === 'id_desc')       return a.sort((x,y) => (y.id||'').localeCompare(x.id||''));
+  return a.sort((x,y) => (x.id||'').localeCompare(y.id||'')); // id_asc
+}
+
+function toggleSortMenu(e) {
+  e.stopPropagation();
+  const dd = document.getElementById('sort-dropdown');
+  const visible = dd.style.display !== 'none';
+  dd.style.display = visible ? 'none' : 'block';
+  // Aktiven Eintrag markieren
+  dd.querySelectorAll('button').forEach(btn => {
+    const mode = btn.getAttribute('onclick').match(/'(\w+)'/)[1];
+    btn.classList.toggle('active', mode === sortMode);
+  });
+  if (!visible) {
+    setTimeout(() => document.addEventListener('click', () => {
+      dd.style.display = 'none';
+    }, {once: true}), 0);
+  }
+}
+
+function setSortMode(mode) {
+  sortMode = mode;
+  const cfg = getConfig();
+  cfg.sort_mode = mode;
+  localStorage.setItem('notizen_config', JSON.stringify(cfg));
+  document.getElementById('sort-dropdown').style.display = 'none';
+  renderList();
+}
+
 function renderList(filteredNotes) {
   const list = document.getElementById('notes-list');
   const q = document.getElementById('search-input').value.toLowerCase().trim();
@@ -985,9 +1044,9 @@ function renderList(filteredNotes) {
 
   // Search mode: highlighted results with preview
   if (q) {
-    const matches = notes.filter(n =>
+    const matches = sortNotes(notes.filter(n =>
       (n.title||'').toLowerCase().includes(q) || (n.content||'').toLowerCase().includes(q)
-    ).sort((a,b) => (a.id||'').localeCompare(b.id||''));
+    ));
 
     if (!matches.length) {
       list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:40px 20px;">Keine Treffer</div>';
@@ -1014,7 +1073,7 @@ function renderList(filteredNotes) {
   }
 
   // Files mode: folders + root notes
-  const allSorted = [...notes].sort((a,b) => (a.id||'').localeCompare(b.id||''));
+  const allSorted = sortNotes(notes);
   const folderNoteIds = new Set(folders.flatMap(f => f.note_ids || []));
   let html = '';
 
@@ -2042,6 +2101,7 @@ notes = loadNotesFromStorage(); // also sets folders
 // Restore state
 const initCfg = getConfig();
 openTabs = initCfg.open_tabs || [];
+if (initCfg.sort_mode) sortMode = initCfg.sort_mode;
 // Clean tabs that no longer exist
 openTabs = openTabs.filter(id => notes.some(n => n.id === id));
 
