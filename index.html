@@ -243,9 +243,13 @@
   /* ── STATUS BAR ── */
   #status-bar {
     height: 24px; background: var(--bg2); border-top: 1px solid var(--border);
-    display: flex; align-items: center; padding: 0 16px;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
     font-size: 12px; color: var(--muted); flex-shrink: 0;
   }
+  #sync-indicator {
+    font-size: 12px; transition: color .3s; flex-shrink: 0; cursor: default;
+  }
+  #sync-indicator.spinning { animation: spin .8s linear infinite; }
 
   /* ── SETTINGS OVERLAY (backdrop + centered modal) ── */
   #settings-overlay {
@@ -626,7 +630,10 @@
     </div>
 
     <!-- STATUS BAR -->
-    <div id="status-bar">Keine Notiz ausgewaehlt</div>
+    <div id="status-bar">
+      <span id="status-words">Keine Notiz ausgewaehlt</span>
+      <span id="sync-indicator" title="Synchronisiert">&#10003;</span>
+    </div>
 
     <!-- AI OVERLAY -->
     <div id="ai-overlay">
@@ -818,6 +825,17 @@ let findMatches = [];
 let findIdx = 0;
 // Hold-to-open-menu (mobile)
 let _holdTimer = null;
+// Sync state
+let _syncStatus = 'idle';   // idle | uploading | downloading | offline | pending
+let _hasPendingUpload = false;
+
+const _SYNC_STATES = {
+  idle:        { icon: '\u2713',  color: 'var(--accent)', spin: false, title: 'Synchronisiert' },
+  uploading:   { icon: '\u2191',  color: '#4da6ff',       spin: true,  title: 'Wird hochgeladen...' },
+  downloading: { icon: '\u2193',  color: '#4da6ff',       spin: true,  title: 'Wird heruntergeladen...' },
+  offline:     { icon: '\u2297',  color: 'var(--muted)',  spin: false, title: 'Kein Internet \u2013 \xC4nderungen lokal gespeichert' },
+  pending:     { icon: '\u2191',  color: '#ffaa00',       spin: false, title: 'Ausstehende \xC4nderungen \u2013 wird synchronisiert sobald online' },
+};
 
 const CONFIG_KEY = 'notizen_config';
 const DATA_KEY = 'notizen_data';
@@ -1139,7 +1157,7 @@ function closeTab(id) {
       document.getElementById('note-title-input').value = '';
       document.getElementById('note-content-input').value = '';
       document.getElementById('note-date').textContent = '';
-      document.getElementById('status-bar').textContent = 'Keine Notiz ausgewaehlt';
+      document.getElementById('status-words').textContent = 'Keine Notiz ausgewaehlt';
     }
   }
   renderTabBar();
@@ -1175,7 +1193,9 @@ function openNote(id) {
 }
 
 let _uploadDebounce = null;
-function saveCurrentNote() {
+
+// Sofortige lokale Speicherung bei jedem Tastendruck — verhindert Race Condition mit Download
+function saveLocalImmediate() {
   if (!currentNoteId) return;
   const note = notes.find(n => n.id === currentNoteId);
   if (!note) return;
@@ -1187,11 +1207,18 @@ function saveCurrentNote() {
     note.content = newContent;
     note.modified = new Date().toISOString();
     saveNotesToStorage();
-    renderTabBar();
-    if (titleChanged) renderList();
+    if (titleChanged) { renderTabBar(); renderList(); }
+    // Debounce Upload: 1s nach letzter Aenderung
     clearTimeout(_uploadDebounce);
-    _uploadDebounce = setTimeout(() => syncNow(), 2000);
+    _uploadDebounce = setTimeout(() => {
+      if (!navigator.onLine) { _hasPendingUpload = true; setSyncStatus('pending'); return; }
+      syncNow();
+    }, 1000);
   }
+}
+
+function saveCurrentNote() {
+  saveLocalImmediate();
 }
 
 function deleteCurrentNote() {
@@ -1206,7 +1233,27 @@ function deleteCurrentNote() {
 function updateStatusBar() {
   const content = document.getElementById('note-content-input').value;
   const words = content.trim() ? content.trim().split(/\s+/).length : 0;
-  document.getElementById('status-bar').textContent = `  ${words} Woerter  ·  ${content.length} Zeichen`;
+  document.getElementById('status-words').textContent = `  ${words} Woerter  \xB7  ${content.length} Zeichen`;
+}
+
+function setSyncStatus(status) {
+  _syncStatus = status;
+  const s = _SYNC_STATES[status] || _SYNC_STATES.idle;
+  // Status bar indicator
+  const ind = document.getElementById('sync-indicator');
+  if (ind) {
+    ind.textContent = s.icon;
+    ind.style.color = s.color;
+    ind.title = s.title;
+    ind.classList.toggle('spinning', s.spin);
+  }
+  // Rail + mobile sync buttons
+  [document.getElementById('rail-sync-btn'), document.getElementById('mobile-sync-btn')].forEach(btn => {
+    if (!btn) return;
+    btn.style.color = s.color;
+    btn.title = s.title;
+    btn.classList.toggle('spinning', s.spin && btn.id !== 'sync-indicator');
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -1408,8 +1455,9 @@ function exportJson() {
 //  GOOGLE DRIVE SYNC
 // ─────────────────────────────────────────────
 async function syncNow() {
+  if (!navigator.onLine) { _hasPendingUpload = true; setSyncStatus('pending'); return; }
   const cfg = getConfig();
-  saveCurrentNote();
+  setSyncStatus('uploading');
   if (cfg.drive_script_url) {
     // ── Apps Script Sync (kein Token-Ablauf) ──────────────
     try {
@@ -1423,14 +1471,17 @@ async function syncNow() {
         body: JSON.stringify(data)
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      showToast('Synchronisiert');
+      _hasPendingUpload = false;
+      setSyncStatus('idle');
     } catch (e) {
+      setSyncStatus(navigator.onLine ? 'idle' : 'pending');
       showToast('Sync-Fehler: ' + e.message);
     }
     return;
   }
   // ── Direkter Drive-Zugriff (Token nötig) ──────────────
   if (!cfg.drive_token || !cfg.drive_file_id) {
+    setSyncStatus('idle');
     showToast('Sync nicht konfiguriert (SETUP.md)');
     return;
   }
@@ -1444,16 +1495,21 @@ async function syncNow() {
         body: JSON.stringify(data)
       }
     );
-    if (resp.status === 401) { showToast('Token abgelaufen – bitte erneuern'); return; }
+    if (resp.status === 401) { setSyncStatus('idle'); showToast('Token abgelaufen \u2013 bitte erneuern'); return; }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    showToast('Synchronisiert');
+    _hasPendingUpload = false;
+    setSyncStatus('idle');
   } catch (e) {
+    setSyncStatus(navigator.onLine ? 'idle' : 'pending');
     showToast('Sync-Fehler: ' + e.message);
   }
 }
 
 async function downloadFromDrive() {
+  if (!navigator.onLine) return;
   const cfg = getConfig();
+  if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) return;
+  setSyncStatus('downloading');
   try {
     let remote;
     if (cfg.drive_script_url) {
@@ -1495,7 +1551,22 @@ async function downloadFromDrive() {
     }
     saveNotesToStorage();
     renderList();
-  } catch(e) { console.error('Download error:', e); }
+    // Refresh active note if it was updated remotely
+    if (currentNoteId) {
+      const updated = notes.find(n => n.id === currentNoteId);
+      if (updated) {
+        const ta = document.getElementById('note-content-input');
+        const ti = document.getElementById('note-title-input');
+        // Only overwrite if content actually changed (avoid cursor jump)
+        if (ta.value !== (updated.content || '')) ta.value = updated.content || '';
+        if (ti.value !== (updated.title || '')) ti.value = updated.title || '';
+      }
+    }
+    setSyncStatus(_hasPendingUpload ? 'pending' : 'idle');
+  } catch(e) {
+    console.error('Download error:', e);
+    setSyncStatus(navigator.onLine ? 'idle' : 'offline');
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1520,8 +1591,22 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSettings(); closeAI(); closeFindBar(); closeCtxSheet(); }
 });
 
-// ── Content change listener ──
-document.getElementById('note-content-input').addEventListener('input', updateStatusBar);
+// ── Content change listeners ──
+document.getElementById('note-content-input').addEventListener('input', () => { updateStatusBar(); saveLocalImmediate(); });
+document.getElementById('note-title-input').addEventListener('input', saveLocalImmediate);
+
+// ── Offline / Online detection ──
+window.addEventListener('offline', () => {
+  setSyncStatus(_hasPendingUpload ? 'pending' : 'offline');
+});
+window.addEventListener('online', () => {
+  setSyncStatus('idle');
+  if (_hasPendingUpload) {
+    setTimeout(() => syncNow(), 500);
+  } else {
+    setTimeout(() => downloadFromDrive(), 500);
+  }
+});
 
 // ─────────────────────────────────────────────
 //  FOLDERS
@@ -1726,8 +1811,8 @@ function _updateFindCount() {
 // ─────────────────────────────────────────────
 //  AUTO-SAVE + SYNC
 // ─────────────────────────────────────────────
-setInterval(() => { if (currentNoteId) saveCurrentNote(); }, 5000);
-setInterval(() => { downloadFromDrive(); }, 5000);
+setInterval(() => { if (currentNoteId) saveLocalImmediate(); }, 3000);
+setInterval(() => { downloadFromDrive(); }, 3000);
 
 // ─────────────────────────────────────────────
 //  INIT
@@ -1757,6 +1842,8 @@ if (openTabs.length) {
   switchTab(openTabs[0]);
 }
 
+// Initial sync status + first download
+if (!navigator.onLine) setSyncStatus('offline'); else setSyncStatus('idle');
 downloadFromDrive();
 
 // ─────────────────────────────────────────────
