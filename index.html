@@ -797,6 +797,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="sync-debug" style="position:fixed;bottom:0;left:0;right:0;background:#111;color:#0f0;font:10px monospace;padding:4px 8px;max-height:120px;overflow-y:auto;z-index:99999;opacity:0.9;"></div>
 <div id="ptr-indicator"></div>
 
 <!-- CONTEXT SHEET -->
@@ -1238,6 +1239,20 @@ function updateStatusBar() {
   document.getElementById('status-words').textContent = `  ${words} Woerter  \xB7  ${content.length} Zeichen`;
 }
 
+// Debug-Panel toggle: 3x auf Sync-Indikator tippen
+let _debugTaps = 0, _debugTapTimer = null;
+function _toggleDebug() {
+  _debugTaps++;
+  clearTimeout(_debugTapTimer);
+  _debugTapTimer = setTimeout(() => { _debugTaps = 0; }, 800);
+  if (_debugTaps >= 3) {
+    _debugTaps = 0;
+    _debugVisible = !_debugVisible;
+    const el = document.getElementById('sync-debug');
+    if (el) el.style.display = _debugVisible ? 'block' : 'none';
+  }
+}
+
 function setSyncStatus(status) {
   _syncStatus = status;
   const s = _SYNC_STATES[status] || _SYNC_STATES.idle;
@@ -1248,6 +1263,7 @@ function setSyncStatus(status) {
     ind.style.color = s.color;
     ind.title = s.title;
     ind.classList.toggle('spinning', s.spin);
+    ind.onclick = _toggleDebug;
   }
   // Rail + mobile sync buttons
   [document.getElementById('rail-sync-btn'), document.getElementById('mobile-sync-btn')].forEach(btn => {
@@ -1524,19 +1540,46 @@ async function _uploadData(cfg) {
   }
 }
 
+// Debug-Log: sichtbar am unteren Bildschirmrand (3x Sync-Indikator tippen zum Ein/Ausschalten)
+let _debugVisible = true;  // TEMP: automatisch an zum Debuggen
+function _dbg(msg) {
+  console.log('[SYNC]', msg);
+  const el = document.getElementById('sync-debug');
+  if (!el) return;
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML += t + ' ' + msg + '<br>';
+  el.scrollTop = el.scrollHeight;
+  // Max 30 Zeilen
+  const lines = el.innerHTML.split('<br>');
+  if (lines.length > 30) el.innerHTML = lines.slice(-30).join('<br>');
+}
+
 function _applyRemoteMerge(remote) {
-  // Merge notes: newer modified timestamp wins
   const localById = Object.fromEntries(notes.map(n => [n.id, n]));
   const remoteById = Object.fromEntries((remote.notes||[]).map(n => [n.id, n]));
   const allIds = new Set([...Object.keys(localById), ...Object.keys(remoteById)]);
   const merged = [];
+  let curNoteInfo = '';
   for (const id of allIds) {
     const l = localById[id], r = remoteById[id];
-    if (l && r) merged.push((l.modified||'') >= (r.modified||'') ? l : r);
-    else merged.push(l || r);
+    if (l && r) {
+      const localWins = (l.modified||'') >= (r.modified||'');
+      merged.push(localWins ? l : r);
+      // Debug fuer aktive Notiz
+      if (id === currentNoteId) {
+        curNoteInfo = localWins
+          ? 'LOCAL gewinnt: L=' + (l.modified||'?').slice(11,23) + ' >= R=' + (r.modified||'?').slice(11,23)
+          : 'REMOTE gewinnt: R=' + (r.modified||'?').slice(11,23) + ' > L=' + (l.modified||'?').slice(11,23);
+        if (!localWins) curNoteInfo += ' | Inhalt: "' + (r.content||'').slice(0,30) + '..."';
+      }
+    } else {
+      merged.push(l || r);
+    }
   }
   notes = merged;
-  // Merge folders: remote wins on conflict, local-only entries kept
+  if (curNoteInfo) _dbg('Merge: ' + curNoteInfo);
+
+  // Merge folders
   if (remote.folders) {
     const remoteMap = Object.fromEntries((remote.folders||[]).map(f => [f.id, f]));
     const localMap = Object.fromEntries(folders.map(f => [f.id, f]));
@@ -1545,16 +1588,24 @@ function _applyRemoteMerge(remote) {
   }
   saveNotesToStorage();
   renderList();
-  // Refresh active note editor if it changed remotely — aber NICHT wenn User gerade tippt
+
+  // Refresh editor — NICHT wenn User tippt
   if (currentNoteId) {
     const updated = notes.find(n => n.id === currentNoteId);
     if (updated) {
       const ta = document.getElementById('note-content-input');
       const ti = document.getElementById('note-title-input');
-      // Typing-Guard: wenn User gerade tippt, Editor nicht ueberschreiben
       if (!_isTyping) {
-        if (ta.value !== (updated.content || '')) ta.value = updated.content || '';
-        if (ti.value !== (updated.title || '')) ti.value = updated.title || '';
+        const contentDiff = ta.value !== (updated.content || '');
+        const titleDiff = ti.value !== (updated.title || '');
+        if (contentDiff || titleDiff) {
+          _dbg('Editor-Update: content=' + contentDiff + ' title=' + titleDiff + ' | typing=' + _isTyping);
+          _dbg('Editor hat: "' + ta.value.slice(0,30) + '..." Note hat: "' + (updated.content||'').slice(0,30) + '..."');
+        }
+        if (contentDiff) ta.value = updated.content || '';
+        if (titleDiff) ti.value = updated.title || '';
+      } else {
+        _dbg('Editor NICHT aktualisiert (typing=true)');
       }
     }
   }
@@ -1568,20 +1619,25 @@ async function syncNow() {
   if (!cfg.drive_script_url && (!cfg.drive_token || !cfg.drive_file_id)) { _syncBusy = false; return; }
 
   try {
-    // Step 1: Download remote & merge FIRST — critical to not overwrite other devices
+    _dbg('syncNow START');
     setSyncStatus('downloading');
     const remote = await _fetchRemote(cfg);
+    _dbg('Download: ' + (remote ? (remote.notes||[]).length + ' Notizen' : 'NULL'));
     if (remote) _applyRemoteMerge(remote);
 
-    // Step 2: Upload the merged result
     setSyncStatus('uploading');
+    // Snapshot: was wird hochgeladen?
+    if (currentNoteId) {
+      const cur = notes.find(n => n.id === currentNoteId);
+      if (cur) _dbg('Upload Notiz: "' + (cur.content||'').slice(0,40) + '..." mod=' + (cur.modified||'').slice(11,23));
+    }
     await _uploadData(cfg);
     _hasPendingUpload = false;
     _syncRetries = 0;
     setSyncStatus('idle');
-    console.log('[SYNC] Upload OK:', new Date().toLocaleTimeString(), 'Notes:', notes.length);
+    _dbg('syncNow OK');
   } catch (e) {
-    console.error('[SYNC] syncNow error:', e);
+    _dbg('syncNow FEHLER: ' + e.message);
     _syncRetries++;
     if (e.message === 'TOKEN_EXPIRED') { showToast('Token abgelaufen'); setSyncStatus('offline'); }
     else if (e.message === 'NOT_CONFIGURED') { showToast('Sync nicht konfiguriert'); setSyncStatus('idle'); }
