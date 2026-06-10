@@ -1700,6 +1700,23 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSettings(); closeAI(); closeFindBar(); closeCtxSheet(); }
 });
 
+// ── Editor-Wert-Tracker: loggt JEDE Aenderung am textarea ──
+(function() {
+  const ta = document.getElementById('note-content-input');
+  const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+  Object.defineProperty(ta, 'value', {
+    get() { return desc.get.call(this); },
+    set(v) {
+      const old = desc.get.call(this);
+      if (old !== v) {
+        const caller = new Error().stack.split('\n')[2]?.trim() || '?';
+        _dbg('EDITOR SET: "' + (v||'').slice(0,25) + '..." ← war: "' + old.slice(0,25) + '..." | von: ' + caller.slice(0,60));
+      }
+      return desc.set.call(this, v);
+    }
+  });
+})();
+
 // ── Content change listeners ──
 function _markTyping() {
   _isTyping = true;
