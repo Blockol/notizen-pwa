@@ -1603,8 +1603,8 @@ function _applyRemoteMerge(remote) {
     const l = localById[id], r = remoteById[id];
     if (l && r) {
       const base = l._base || '';
-      const localChanged = base && l.content !== base;
-      const remoteChanged = base && r.content !== base;
+      const localChanged = l.content !== base;
+      const remoteChanged = r.content !== base;
 
       if (localChanged && remoteChanged && l.content !== r.content) {
         // 3-Wege-Merge: beide haben seit letztem Sync geaendert
@@ -2006,7 +2006,7 @@ function _updateFindCount() {
 //  AUTO-SAVE + SYNC
 // ─────────────────────────────────────────────
 setInterval(() => { if (currentNoteId) saveLocalImmediate(); }, 3000);
-setInterval(() => { downloadFromDrive(); }, 3000);
+setInterval(() => { downloadFromDrive(); }, 2000);
 
 // ─────────────────────────────────────────────
 //  INIT
