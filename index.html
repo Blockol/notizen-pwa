@@ -797,7 +797,7 @@
 </div>
 
 <div id="toast"></div>
-<div id="sync-debug" style="position:fixed;bottom:0;left:0;right:0;background:#111;color:#0f0;font:10px monospace;padding:4px 8px;max-height:120px;overflow-y:auto;z-index:99999;opacity:0.9;"></div>
+<div id="sync-debug" style="position:fixed;bottom:0;left:0;right:0;background:#111;color:#0f0;font:10px monospace;padding:4px 8px;max-height:120px;overflow-y:auto;z-index:99999;opacity:0.9;"><button onclick="navigator.clipboard.writeText(this.parentElement.innerText).then(()=>this.textContent='Kopiert!');setTimeout(()=>this.textContent='Copy',1000)" style="position:sticky;top:0;float:right;background:#333;color:#0f0;border:1px solid #0f0;font:10px monospace;padding:2px 6px;cursor:pointer;z-index:1;">Copy</button></div>
 <div id="ptr-indicator"></div>
 
 <!-- CONTEXT SHEET -->
