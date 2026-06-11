@@ -1235,20 +1235,19 @@ async function runAISearch() {
 // ─────────────────────────────────────────────
 //  TABS
 // ─────────────────────────────────────────────
+function allTabs() {
+  return notes.map(n => n.id).sort();
+}
+
 function renderTabBar() {
   const scroll = document.getElementById('tab-scroll');
-  scroll.innerHTML = openTabs.map(id => {
+  scroll.innerHTML = allTabs().map(id => {
     const note = notes.find(n => n.id === id);
     const title = escHtml(((note && note.title) || 'Unbenannt').slice(0, 22));
     const isActive = id === activeTabId;
     const cls = isActive ? ' active' : '';
-    // × only prominently visible on active tab; on inactive it appears on hover via CSS
-    const closeStyle = isActive ? '' : 'style="opacity:0;"';
-    return `<button class="tab-btn${cls}" onclick="switchTab('${escHtml(id)}')" data-id="${escHtml(id)}"
-      onmouseenter="this.querySelector('.tab-close').style.opacity='1'"
-      onmouseleave="${isActive ? '' : "this.querySelector('.tab-close').style.opacity='0'"}">
+    return `<button class="tab-btn${cls}" onclick="switchTab('${escHtml(id)}')" data-id="${escHtml(id)}">
       <span>${title}</span>
-      <span class="tab-close" ${closeStyle} onclick="event.stopPropagation();closeTab('${escHtml(id)}')">&times;</span>
     </button>`;
   }).join('');
   checkTabOverflow();
@@ -1292,13 +1291,11 @@ function switchTab(id) {
 }
 
 function closeTab(id) {
-  const idx = openTabs.indexOf(id);
-  if (idx === -1) return;
-  openTabs.splice(idx, 1);
+  // Wird nur beim Löschen aufgerufen. Tab wechseln, falls aktiv.
   if (activeTabId === id) {
-    if (openTabs.length) {
-      const newIdx = Math.min(idx, openTabs.length - 1);
-      switchTab(openTabs[newIdx]);
+    const remaining = allTabs().filter(t => t !== id);
+    if (remaining.length) {
+      switchTab(remaining[remaining.length - 1]);
     } else {
       activeTabId = null;
       currentNoteId = null;
@@ -1306,15 +1303,14 @@ function closeTab(id) {
       document.getElementById('note-content-input').value = '';
       document.getElementById('note-date').textContent = '';
       document.getElementById('status-words').textContent = 'Keine Notiz ausgewaehlt';
+      renderTabBar();
     }
   }
-  renderTabBar();
-  saveTabState();
 }
 
 function saveTabState() {
   const cfg = getConfig();
-  cfg.open_tabs = openTabs;
+  cfg.last_active_tab = activeTabId;
   setConfig(cfg);
 }
 
@@ -1326,7 +1322,6 @@ function newNote() {
   const id = Date.now().toString();
   const note = { id, title: '', content: '', modified: localISO() };
   notes.unshift(note);
-  openTabs.push(id);
   switchTab(id);
   saveNotesToStorage();
   closeSidebar();
@@ -1335,7 +1330,6 @@ function newNote() {
 
 function openNote(id) {
   saveCurrentNote();
-  if (!openTabs.includes(id)) openTabs.push(id);
   switchTab(id);
   closeSidebar();
 }
@@ -1792,14 +1786,13 @@ function _applyRemoteMerge(remote) {
     folders = mergedFolders;
   }
   saveNotesToStorage();
-  // Stale Tabs entfernen (Notizen die nicht mehr existieren)
-  const prevTabCount = openTabs.length;
-  openTabs = openTabs.filter(id => notes.some(n => n.id === id));
-  if (activeTabId && !openTabs.includes(activeTabId)) {
-    activeTabId = openTabs.length ? openTabs[openTabs.length - 1] : null;
+  // Aktiven Tab prüfen (könnte remote gelöscht worden sein)
+  if (activeTabId && !notes.some(n => n.id === activeTabId)) {
+    const remaining = allTabs();
+    activeTabId = remaining.length ? remaining[remaining.length - 1] : null;
     currentNoteId = activeTabId;
   }
-  if (openTabs.length !== prevTabCount) { renderTabBar(); saveTabState(); }
+  renderTabBar();
   renderList();
 
   // Refresh editor — NICHT wenn User tippt
@@ -1915,7 +1908,6 @@ function showToast(msg) {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 'n') { e.preventDefault(); newNote(); }
   if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveCurrentNote(); showToast('Gespeichert'); }
-  if (e.ctrlKey && e.key === 'w') { e.preventDefault(); if (activeTabId) closeTab(activeTabId); }
   if (e.key === 'Escape') { closeSettings(); closeAI(); closeFindBar(); closeCtxSheet(); }
 });
 
@@ -2036,13 +2028,6 @@ function deleteFolder(id) {
   _addFolderTombstone(id);
   folders = folders.filter(f => f.id !== id);
   collapsedFolders.delete(id);
-  // Tabs der Notizen in diesem Ordner schließen
-  noteIdsInFolder.forEach(nid => {
-    openTabs = openTabs.filter(t => t !== nid);
-    if (activeTabId === nid) activeTabId = null;
-  });
-  if (!activeTabId && openTabs.length > 0) switchTab(openTabs[openTabs.length - 1]);
-  else if (!activeTabId) { currentNoteId = null; document.getElementById('note-title-input').value = ''; document.getElementById('note-content-input').value = ''; }
   saveNotesToStorage();
   renderTabBar();
   renderList();
@@ -2263,15 +2248,13 @@ notes = loadNotesFromStorage(); // also sets folders
 
 // Restore state
 const initCfg = getConfig();
-openTabs = initCfg.open_tabs || [];
 if (initCfg.sort_mode) sortMode = initCfg.sort_mode;
 if (initCfg.debug_console) {
   _debugVisible = true;
   const wrap = document.getElementById('sync-debug-wrap');
   if (wrap) wrap.style.display = 'block';
 }
-// Clean tabs that no longer exist
-openTabs = openTabs.filter(id => notes.some(n => n.id === id));
+// openTabs wird immer aus allTabs() berechnet — kein Restore nötig
 
 // Apply theme
 if (initCfg.theme === 'light') {
@@ -2282,8 +2265,12 @@ if (initCfg.theme === 'light') {
 renderList();
 renderTabBar();
 
-if (openTabs.length) {
-  switchTab(openTabs[0]);
+const _lastTab = initCfg.last_active_tab;
+const _allIds = allTabs();
+if (_lastTab && _allIds.includes(_lastTab)) {
+  switchTab(_lastTab);
+} else if (_allIds.length) {
+  switchTab(_allIds[0]);
 }
 
 // Initial sync status + first download
