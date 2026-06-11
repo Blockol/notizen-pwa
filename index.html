@@ -220,9 +220,13 @@
   #note-content-input {
     flex: 1; background: transparent; border: none;
     color: var(--text); font-family: var(--font); font-size: 13px;
-    padding: 12px 24px; outline: none; resize: none; line-height: 1.7;
+    padding: 12px 24px; outline: none; line-height: 1.7;
+    overflow-y: auto; white-space: pre-wrap; word-break: break-word; cursor: text;
   }
-  #note-content-input::placeholder { color: var(--muted); }
+  #note-content-input:empty::before {
+    content: 'Schreib deine Notiz hier...'; color: var(--muted); pointer-events: none;
+  }
+  #note-content-input img { max-width: 100%; height: auto; display: block; margin: 4px 0; }
 
   /* AI Toolbar */
   #ai-toolbar {
@@ -715,7 +719,7 @@
     <div id="editor-area">
       <input id="note-title-input" type="text" placeholder="Titel..." autocomplete="off" spellcheck="true">
       <div id="note-date"></div>
-      <textarea id="note-content-input" placeholder="Schreib deine Notiz hier..." spellcheck="true"></textarea>
+      <div id="note-content-input" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true"></div>
       <div id="find-bar">
         <input id="find-input" type="search" placeholder="Im Text suchen..." oninput="onFindInput()" onkeydown="onFindKeydown(event)" autocomplete="off">
         <span id="find-count"></span>
@@ -1365,6 +1369,38 @@ function scrollTabs(delta) {
   document.getElementById('tab-scroll').scrollBy({ left: delta, behavior: 'smooth' });
 }
 
+// ── Editor-Helfer: Qt-HTML erkennen + laden/speichern ──
+function _isQtHtml(content) {
+  return content && content.indexOf('<!DOCTYPE HTML') !== -1;
+}
+function _setEditorContent(content) {
+  const el = document.getElementById('note-content-input');
+  el.removeAttribute('data-qt-html');
+  el.setAttribute('contenteditable', 'true');
+  if (!content) { el.innerHTML = ''; return; }
+  if (_isQtHtml(content)) {
+    const m = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    el.innerHTML = m ? m[1] : content;
+    el.setAttribute('data-qt-html', '1');
+    el.setAttribute('contenteditable', 'false'); // Lesen-only für Qt-HTML-Notizen
+  } else if (content.trimStart().charAt(0) === '<') {
+    el.innerHTML = content;
+  } else {
+    el.textContent = content;
+  }
+}
+function _getEditorContent() {
+  const el = document.getElementById('note-content-input');
+  if (el.getAttribute('data-qt-html')) {
+    // Qt-HTML unverändert aus notes zurückgeben
+    const note = currentNoteId ? notes.find(n => n.id === currentNoteId) : null;
+    return note ? (note.content || '') : el.innerText;
+  }
+  const html = el.innerHTML;
+  if (html.indexOf('<img') !== -1) return html;  // Browser-Bilder als HTML speichern
+  return el.innerText || '';
+}
+
 function switchTab(id) {
   saveCurrentNote();
   activeTabId = id;
@@ -1372,7 +1408,7 @@ function switchTab(id) {
   const note = notes.find(n => n.id === id);
   if (note) {
     document.getElementById('note-title-input').value = note.title || '';
-    document.getElementById('note-content-input').value = note.content || '';
+    _setEditorContent(note.content || '');
     document.getElementById('note-date').textContent = 'Zuletzt: ' + (note.modified||'').slice(0,16).replace('T','  ');
     updateStatusBar();
   }
@@ -1393,7 +1429,7 @@ function closeTab(id) {
       activeTabId = null;
       currentNoteId = null;
       document.getElementById('note-title-input').value = '';
-      document.getElementById('note-content-input').value = '';
+      _setEditorContent('');
       document.getElementById('note-date').textContent = '';
       document.getElementById('status-words').textContent = 'Keine Notiz ausgewaehlt';
       renderTabBar();
@@ -1435,7 +1471,7 @@ function saveLocalImmediate() {
   const note = notes.find(n => n.id === currentNoteId);
   if (!note) return;
   const newTitle = document.getElementById('note-title-input').value.trim() || 'Unbenannte Notiz';
-  const newContent = document.getElementById('note-content-input').value;
+  const newContent = _getEditorContent();
   if (note.title !== newTitle || note.content !== newContent) {
     const titleChanged = note.title !== newTitle;
     note.title = newTitle;
@@ -1472,7 +1508,7 @@ function deleteCurrentNote() {
 }
 
 function updateStatusBar() {
-  const content = document.getElementById('note-content-input').value;
+  const content = document.getElementById('note-content-input').innerText || '';
   const words = content.trim() ? content.trim().split(/\s+/).length : 0;
   document.getElementById('status-words').textContent = `  ${words} Woerter  \xB7  ${content.length} Zeichen`;
 }
@@ -1524,10 +1560,13 @@ const AI_PROMPTS = {
 };
 
 function openAI(type) {
-  const content = document.getElementById('note-content-input');
-  const start = content.selectionStart;
-  const end = content.selectionEnd;
-  aiSelectedText = start !== end ? content.value.slice(start, end) : content.value;
+  const el = document.getElementById('note-content-input');
+  const sel = window.getSelection();
+  if (sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) {
+    aiSelectedText = sel.toString();
+  } else {
+    aiSelectedText = el.innerText || '';
+  }
   if (!aiSelectedText.trim()) { showToast('Kein Text'); return; }
 
   document.getElementById('ai-selected-text').textContent = aiSelectedText.slice(0, 200) + (aiSelectedText.length > 200 ? '...' : '');
@@ -1596,13 +1635,16 @@ async function runAI() {
 
 function replaceWithResult() {
   if (!aiResult) { showToast('Kein Ergebnis'); return; }
-  const content = document.getElementById('note-content-input');
-  const start = content.selectionStart;
-  const end = content.selectionEnd;
-  if (start !== end) {
-    content.value = content.value.slice(0, start) + aiResult + content.value.slice(end);
+  const el = document.getElementById('note-content-input');
+  el.focus();
+  const sel = window.getSelection();
+  if (sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) {
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(aiResult));
+    range.collapse(false);
   } else {
-    content.value = aiResult;
+    el.textContent = aiResult;
   }
   saveCurrentNote();
   closeAI();
@@ -1896,16 +1938,17 @@ function _applyRemoteMerge(remote) {
   if (currentNoteId) {
     const updated = notes.find(n => n.id === currentNoteId);
     if (updated) {
-      const ta = document.getElementById('note-content-input');
       const ti = document.getElementById('note-title-input');
       if (!_isTyping) {
-        const contentDiff = ta.value !== (updated.content || '');
+        const editorContent = _getEditorContent();
+        const storedContent = updated.content || '';
+        const contentDiff = editorContent !== storedContent;
         const titleDiff = ti.value !== (updated.title || '');
         if (contentDiff || titleDiff) {
           _dbg('Editor-Update: content=' + contentDiff + ' title=' + titleDiff + ' | typing=' + _isTyping);
-          _dbg('Editor hat: "' + ta.value.slice(0,30) + '..." Note hat: "' + (updated.content||'').slice(0,30) + '..."');
+          _dbg('Editor hat: "' + editorContent.slice(0,30) + '..." Note hat: "' + storedContent.slice(0,30) + '..."');
         }
-        if (contentDiff) ta.value = updated.content || '';
+        if (contentDiff) _setEditorContent(storedContent);
         if (titleDiff) ti.value = updated.title || '';
       } else {
         _dbg('Editor NICHT aktualisiert (typing=true)');
@@ -2008,22 +2051,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSettings(); closeAI(); closeFindBar(); closeCtxSheet(); }
 });
 
-// ── Editor-Wert-Tracker: loggt JEDE Aenderung am textarea ──
-(function() {
-  const ta = document.getElementById('note-content-input');
-  const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
-  Object.defineProperty(ta, 'value', {
-    get() { return desc.get.call(this); },
-    set(v) {
-      const old = desc.get.call(this);
-      if (old !== v) {
-        const caller = new Error().stack.split('\n')[2]?.trim() || '?';
-        _dbg('EDITOR SET: "' + (v||'').slice(0,25) + '..." ← war: "' + old.slice(0,25) + '..." | von: ' + caller.slice(0,60));
-      }
-      return desc.set.call(this, v);
-    }
-  });
-})();
+// (Editor-Wert-Tracker entfernt – Editor ist jetzt ein contenteditable div)
 
 // ── Content change listeners ──
 function _markTyping() {
@@ -2274,7 +2302,7 @@ function findPrev() {
 
 function _findOccurrences(q) {
   if (!q) return [];
-  const content = document.getElementById('note-content-input').value;
+  const content = document.getElementById('note-content-input').innerText || '';
   const lower = content.toLowerCase();
   const qLower = q.toLowerCase();
   const pos = [];
@@ -2289,14 +2317,24 @@ function _findOccurrences(q) {
 }
 
 function _scrollToMatch(idx) {
-  const ta = document.getElementById('note-content-input');
+  const el = document.getElementById('note-content-input');
   const q = document.getElementById('find-input').value;
-  const start = findMatches[idx];
-  ta.focus();
-  ta.setSelectionRange(start, start + q.length);
-  const lh = parseInt(getComputedStyle(ta).lineHeight) || 22;
-  const lines = ta.value.slice(0, start).split('\n').length - 1;
-  ta.scrollTop = Math.max(0, lines * lh - ta.clientHeight / 2);
+  if (!q) return;
+  el.focus();
+  // Selektion auf Anfang setzen und dann idx+1 mal vorwärts suchen
+  const sel = window.getSelection();
+  if (el.firstChild) {
+    const r = document.createRange();
+    r.setStart(el.firstChild, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  } else {
+    sel.removeAllRanges();
+  }
+  for (let i = 0; i <= idx; i++) {
+    if (!window.find(q, false, false, false, false, false, false)) break;
+  }
 }
 
 function _updateFindCount() {
