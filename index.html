@@ -611,17 +611,6 @@
 <!-- ═══ AUTH OVERLAY ═══ -->
 <div id="auth-overlay" class="hidden">
 
-  <!-- Einrichtung -->
-  <div class="auth-screen" id="auth-setup">
-    <div class="auth-icon">🔑</div>
-    <p class="auth-title">Firebase einrichten</p>
-    <p class="auth-sub">Füge deine Firebase Web-App-Konfiguration ein (einmalig):</p>
-    <textarea class="auth-textarea" id="fb-cfg-input" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
-    <input class="auth-input" id="fb-admin-input" type="email" placeholder="Deine Admin-E-Mail (z.B. du@gmail.com)">
-    <button class="s-btn" style="width:100%;padding:12px" onclick="saveFbConfig()">Speichern &amp; Starten</button>
-    <button class="auth-btn-out" onclick="skipAuth()">Ohne Login fortfahren</button>
-  </div>
-
   <!-- Login -->
   <div class="auth-screen" id="auth-login">
     <div class="auth-icon">✦</div>
@@ -931,14 +920,6 @@
                 </div>
                 <div class="s-control"><button class="s-btn-ghost" onclick="fbSignOut();closeSettings()">Abmelden</button></div>
               </div>
-              <div class="s-label">FIREBASE-KONFIGURATION</div>
-              <div class="s-row">
-                <div class="s-row-text">
-                  <div class="s-row-name">Konfiguration ändern</div>
-                  <div class="s-row-desc">Firebase-Projekt JSON und Admin-E-Mail aktualisieren</div>
-                </div>
-                <div class="s-control"><button class="s-btn-ghost" onclick="showFbSetup()">Ändern</button></div>
-              </div>
               <div class="s-row">
                 <div class="s-row-text">
                   <div class="s-row-name">Authentifizierung deaktivieren</div>
@@ -970,6 +951,9 @@
   <div id="ctx-items"></div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
 // ─────────────────────────────────────────────
 //  STATE
@@ -2459,14 +2443,20 @@ async function fullSync() {
 // ─────────────────────────────────────────────
 //  FIREBASE AUTH
 // ─────────────────────────────────────────────
-let _fbAuth = null, _fbDb = null, _fbAdminEmail = '';
+const _FB_CONFIG = {
+  apiKey: "AIzaSyD7QQQfsQHtHjXtOtkn4N_7i56TzJl1-hE",
+  authDomain: "notizen-app-fa187.firebaseapp.com",
+  projectId: "notizen-app-fa187",
+  storageBucket: "notizen-app-fa187.firebasestorage.app",
+  messagingSenderId: "186178004112",
+  appId: "1:186178004112:web:c21c13fb151238987b6415"
+};
+const _FB_ADMIN = 'blocknews7@gmail.com';
 
-function _getFbCfg() {
-  try { return JSON.parse(localStorage.getItem('fb_config') || 'null'); } catch { return null; }
-}
+let _fbAuth = null, _fbDb = null;
 
 function _authScreen(id) {
-  ['auth-setup','auth-login','auth-pending','auth-denied'].forEach(s =>
+  ['auth-login','auth-pending','auth-denied'].forEach(s =>
     document.getElementById(s).classList.toggle('visible', s === id)
   );
   document.getElementById('auth-overlay').classList.remove('hidden');
@@ -2474,18 +2464,6 @@ function _authScreen(id) {
 
 function _authDone() {
   document.getElementById('auth-overlay').classList.add('hidden');
-}
-
-function saveFbConfig() {
-  const raw = document.getElementById('fb-cfg-input').value.trim();
-  const adm = document.getElementById('fb-admin-input').value.trim();
-  try {
-    const cfg = JSON.parse(raw);
-    cfg._admin = adm;
-    localStorage.setItem('fb_config', JSON.stringify(cfg));
-    localStorage.removeItem('fb_skip');
-    location.reload();
-  } catch(e) { alert('Ungültiges JSON: ' + e.message); }
 }
 
 function skipAuth() {
@@ -2499,15 +2477,6 @@ function disableAuth() {
   closeSettings();
 }
 
-function showFbSetup() {
-  closeSettings();
-  const cfg = _getFbCfg() || {};
-  const {_admin, ...rest} = cfg;
-  document.getElementById('fb-cfg-input').value = Object.keys(rest).length ? JSON.stringify(rest, null, 2) : '';
-  document.getElementById('fb-admin-input').value = _admin || '';
-  _authScreen('auth-setup');
-}
-
 async function fbSignIn() {
   if (!_fbAuth) return;
   try { await _fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
@@ -2515,26 +2484,18 @@ async function fbSignIn() {
 }
 
 async function fbSignOut() {
-  if (_fbAuth) await _fbAuth.signOut();
+  if (_fbAuth) { await _fbAuth.signOut(); }
   else { localStorage.removeItem('fb_skip'); location.reload(); }
 }
 
 function _initFirebase() {
-  const cfg = _getFbCfg();
-  if (!cfg) return false;
-  _fbAdminEmail = cfg._admin || '';
-  const {_admin, ...fbCfg} = cfg;
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(fbCfg);
-    _fbAuth = firebase.auth();
-    _fbDb   = firebase.firestore();
-  } catch(e) { console.error('[AUTH] Firebase init failed:', e); return false; }
+  if (!firebase.apps.length) firebase.initializeApp(_FB_CONFIG);
+  _fbAuth = firebase.auth();
+  _fbDb   = firebase.firestore();
 
   _fbAuth.onAuthStateChanged(async user => {
     if (!user) { _authScreen('auth-login'); return; }
-    // Admin → immer direkter Zugang
-    if (user.email === _fbAdminEmail) { _authDone(); return; }
-    // Anderen Nutzer in Firestore prüfen
+    if (user.email === _FB_ADMIN) { _authDone(); return; }
     try {
       const ref = _fbDb.collection('users').doc(user.uid);
       const snap = await ref.get();
@@ -2549,30 +2510,24 @@ function _initFirebase() {
         _authScreen('auth-pending');
       } else {
         const st = snap.data().status;
-        if (st === 'approved')      { _authDone(); }
-        else if (st === 'denied')   { _authScreen('auth-denied'); }
+        if (st === 'approved')    { _authDone(); }
+        else if (st === 'denied') { _authScreen('auth-denied'); }
         else {
           document.getElementById('auth-pending-who').textContent = user.email;
           _authScreen('auth-pending');
-          // Alle 10s neu prüfen (falls Admin genehmigt)
-          setTimeout(() => { snap.ref.get().then(s => { if (s.data()?.status === 'approved') _authDone(); }); }, 10000);
+          setTimeout(() => ref.get().then(s => { if (s.data()?.status === 'approved') _authDone(); }), 10000);
         }
       }
     } catch(e) { console.error('[AUTH]', e); _authScreen('auth-login'); }
   });
-  return true;
 }
 
 // Beim Laden initialisieren
-(function() {
-  if (localStorage.getItem('fb_skip') === '1') { _authDone(); return; }
-  const cfg = _getFbCfg();
-  if (!cfg) { _authScreen('auth-setup'); return; }
+if (localStorage.getItem('fb_skip') === '1') {
+  _authDone();
+} else {
   _initFirebase();
-})();
+}
 </script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </body>
 </html>
