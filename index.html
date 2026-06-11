@@ -1721,10 +1721,13 @@ function _dbg(msg) {
 function _applyRemoteMerge(remote) {
   // ── Tombstones zusammenführen ──
   const allDeleted = new Set([...deletedIds, ...(remote.deleted_ids || [])]);
-  deletedIds = [...allDeleted];
-
   const allDeletedFolders = new Set([...deletedFolderIds, ...(remote.deleted_folder_ids || [])]);
-  deletedFolderIds = [...allDeletedFolders];
+
+  // Tombstone-Pruning: nur behalten wenn Notiz/Ordner auf einer Seite existiert
+  const allNoteIds = new Set([...notes.map(n=>n.id), ...(remote.notes||[]).map(n=>n.id)]);
+  const allFolderIds = new Set([...folders.map(f=>f.id), ...(remote.folders||[]).map(f=>f.id)]);
+  deletedIds = [...allDeleted].filter(id => allNoteIds.has(id));
+  deletedFolderIds = [...allDeletedFolders].filter(id => allFolderIds.has(id));
 
   const localById = Object.fromEntries(notes.filter(n => !allDeleted.has(n.id)).map(n => [n.id, n]));
   const remoteById = Object.fromEntries((remote.notes||[]).filter(n => !allDeleted.has(n.id)).map(n => [n.id, n]));
