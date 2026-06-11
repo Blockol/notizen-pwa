@@ -325,6 +325,18 @@
     transition: background .1s;
   }
   .s-btn-ghost:hover { background: rgba(255,255,255,0.07); }
+  .s-toggle { position: relative; display: inline-block; width: 42px; height: 24px; }
+  .s-toggle input { opacity: 0; width: 0; height: 0; }
+  .s-toggle-slider {
+    position: absolute; inset: 0; background: var(--border);
+    border-radius: 24px; cursor: pointer; transition: background .2s;
+  }
+  .s-toggle-slider:before {
+    content: ''; position: absolute; width: 18px; height: 18px;
+    left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s;
+  }
+  .s-toggle input:checked + .s-toggle-slider { background: var(--accent); }
+  .s-toggle input:checked + .s-toggle-slider:before { transform: translateX(18px); }
 
   /* ── AI VIEW (fullscreen on mobile) ── */
   #ai-overlay {
@@ -707,6 +719,16 @@
                 </div>
                 <div class="s-control"><button class="s-btn-ghost" onclick="exportJson()">Exportieren</button></div>
               </div>
+              <div class="s-label">ENTWICKLER</div>
+              <div class="s-row">
+                <div class="s-row-text">
+                  <div class="s-row-name">Sync-Konsole</div>
+                  <div class="s-row-desc">Debug-Log am unteren Bildschirmrand anzeigen</div>
+                </div>
+                <div class="s-control">
+                  <label class="s-toggle"><input type="checkbox" id="s-debug-toggle" onchange="setDebugVisible(this.checked)"><span class="s-toggle-slider"></span></label>
+                </div>
+              </div>
             </div>
 
             <!-- Appearance -->
@@ -819,7 +841,7 @@
 </div>
 
 <div id="toast"></div>
-<div style="position:fixed;bottom:0;left:0;right:0;z-index:99999;">
+<div id="sync-debug-wrap" style="position:fixed;bottom:0;left:0;right:0;z-index:99999;display:none;">
 <button onclick="navigator.clipboard.writeText(document.getElementById('sync-debug').innerText).then(()=>this.textContent='Kopiert!');setTimeout(()=>this.textContent='Copy',1000)" style="position:absolute;top:2px;right:4px;background:#333;color:#0f0;border:1px solid #0f0;font:10px monospace;padding:2px 6px;cursor:pointer;z-index:100000;">Copy</button>
 <div id="sync-debug" style="background:#111;color:#0f0;font:10px monospace;padding:4px 8px;max-height:120px;overflow-y:auto;opacity:0.9;"></div>
 </div>
@@ -1343,9 +1365,9 @@ function _toggleDebug() {
   _debugTapTimer = setTimeout(() => { _debugTaps = 0; }, 800);
   if (_debugTaps >= 3) {
     _debugTaps = 0;
-    _debugVisible = !_debugVisible;
-    const el = document.getElementById('sync-debug');
-    if (el) el.style.display = _debugVisible ? 'block' : 'none';
+    setDebugVisible(!_debugVisible);
+    const cb = document.getElementById('s-debug-toggle');
+    if (cb) cb.checked = _debugVisible;
   }
 }
 
@@ -1487,6 +1509,7 @@ function openSettings() {
   document.getElementById('s-script-token').value = cfg.drive_script_token || '';
   document.getElementById('s-drive-token').value = cfg.drive_token || '';
   document.getElementById('s-file-id').value = cfg.drive_file_id || '';
+  document.getElementById('s-debug-toggle').checked = !!cfg.debug_console;
   document.getElementById('settings-overlay').classList.add('visible');
   showSettingsPage(0, document.querySelector('.settings-cat'));
 }
@@ -1526,6 +1549,15 @@ function saveAISettings() {
   cfg.ai_model_gemini = document.getElementById('s-gemini-model').value.trim() || 'gemini-2.0-flash';
   setConfig(cfg);
   showToast('KI-Einstellungen gespeichert');
+}
+
+function setDebugVisible(on) {
+  _debugVisible = on;
+  const cfg = getConfig();
+  cfg.debug_console = on;
+  setConfig(cfg);
+  const wrap = document.getElementById('sync-debug-wrap');
+  if (wrap) wrap.style.display = on ? 'block' : 'none';
 }
 
 function saveSyncSettings() {
@@ -1639,7 +1671,7 @@ async function _uploadData(cfg) {
 }
 
 // Debug-Log: sichtbar am unteren Bildschirmrand (3x Sync-Indikator tippen zum Ein/Ausschalten)
-let _debugVisible = true;  // TEMP: automatisch an zum Debuggen
+let _debugVisible = false;
 function _dbg(msg) {
   console.log('[SYNC]', msg);
   const el = document.getElementById('sync-debug');
@@ -2102,6 +2134,11 @@ notes = loadNotesFromStorage(); // also sets folders
 const initCfg = getConfig();
 openTabs = initCfg.open_tabs || [];
 if (initCfg.sort_mode) sortMode = initCfg.sort_mode;
+if (initCfg.debug_console) {
+  _debugVisible = true;
+  const wrap = document.getElementById('sync-debug-wrap');
+  if (wrap) wrap.style.display = 'block';
+}
 // Clean tabs that no longer exist
 openTabs = openTabs.filter(id => notes.some(n => n.id === id));
 
