@@ -226,7 +226,17 @@
   #note-content-input:empty::before {
     content: 'Schreib deine Notiz hier...'; color: var(--muted); pointer-events: none;
   }
-  #note-content-input img { max-width: 100%; height: auto; display: block; margin: 4px 0; }
+  #note-content-input img { max-width: 100%; height: auto; display: block; margin: 4px 0; touch-action: none; }
+  #_img-resize-handle {
+    position: fixed; width: 28px; height: 28px; border-radius: 50%;
+    background: #4A90E2; border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.45);
+    z-index: 9999; display: none; touch-action: none; cursor: se-resize;
+  }
+  #_img-resize-handle::after {
+    content: ''; position: absolute; inset: 5px;
+    border-right: 2px solid #fff; border-bottom: 2px solid #fff;
+  }
 
   /* AI Toolbar */
   #ai-toolbar {
@@ -1370,19 +1380,19 @@ function scrollTabs(delta) {
 }
 
 // ── Editor-Helfer: Qt-HTML erkennen + laden/speichern ──
+let _lastLoadedContent = null;  // verhindert unnötigen Re-Render bei jedem Sync
+
 function _isQtHtml(content) {
   return content && content.indexOf('<!DOCTYPE HTML') !== -1;
 }
 function _setEditorContent(content) {
   const el = document.getElementById('note-content-input');
-  el.removeAttribute('data-qt-html');
-  el.setAttribute('contenteditable', 'true');
+  _lastLoadedContent = content || '';
   if (!content) { el.innerHTML = ''; return; }
   if (_isQtHtml(content)) {
+    // Qt-HTML vom PC: Body-Inhalt extrahieren und als HTML rendern
     const m = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     el.innerHTML = m ? m[1] : content;
-    el.setAttribute('data-qt-html', '1');
-    el.setAttribute('contenteditable', 'false'); // Lesen-only für Qt-HTML-Notizen
   } else if (content.trimStart().charAt(0) === '<') {
     el.innerHTML = content;
   } else {
@@ -1391,13 +1401,8 @@ function _setEditorContent(content) {
 }
 function _getEditorContent() {
   const el = document.getElementById('note-content-input');
-  if (el.getAttribute('data-qt-html')) {
-    // Qt-HTML unverändert aus notes zurückgeben
-    const note = currentNoteId ? notes.find(n => n.id === currentNoteId) : null;
-    return note ? (note.content || '') : el.innerText;
-  }
-  const html = el.innerHTML;
-  if (html.indexOf('<img') !== -1) return html;  // Browser-Bilder als HTML speichern
+  // Enthält die Seite Bilder → als HTML speichern (inkl. resizter Bilder)
+  if (el.querySelector('img')) return el.innerHTML;
   return el.innerText || '';
 }
 
@@ -1940,13 +1945,13 @@ function _applyRemoteMerge(remote) {
     if (updated) {
       const ti = document.getElementById('note-title-input');
       if (!_isTyping) {
-        const editorContent = _getEditorContent();
         const storedContent = updated.content || '';
-        const contentDiff = editorContent !== storedContent;
+        // Vergleich gegen _lastLoadedContent (nicht gegen aktuellen innerHTML),
+        // damit Qt-HTML nicht bei jedem Sync neu gerendert wird
+        const contentDiff = storedContent !== _lastLoadedContent;
         const titleDiff = ti.value !== (updated.title || '');
         if (contentDiff || titleDiff) {
-          _dbg('Editor-Update: content=' + contentDiff + ' title=' + titleDiff + ' | typing=' + _isTyping);
-          _dbg('Editor hat: "' + editorContent.slice(0,30) + '..." Note hat: "' + storedContent.slice(0,30) + '..."');
+          _dbg('Editor-Update: content=' + contentDiff + ' title=' + titleDiff);
         }
         if (contentDiff) _setEditorContent(storedContent);
         if (titleDiff) ti.value = updated.title || '';
@@ -2343,6 +2348,100 @@ function _updateFindCount() {
   if (!q) { el.textContent = ''; return; }
   el.textContent = findMatches.length ? `${findIdx + 1}/${findMatches.length}` : 'Keine';
 }
+
+// ─────────────────────────────────────────────
+//  BILD-RESIZE (Mobile: Long-Press + Drag)
+// ─────────────────────────────────────────────
+(function() {
+  let _selImg = null;        // aktuell gewähltes <img>
+  let _handle = null;        // Handle-Div
+  let _lpTimer = null;       // Long-Press Timer
+  let _lpMoved = false;      // Finger bewegt → kein Long-Press
+  let _dragStart = null;     // {x, y} beim Drag-Start
+  let _origW = 0, _origH = 0;
+
+  function getHandle() {
+    if (!_handle) {
+      _handle = document.createElement('div');
+      _handle.id = '_img-resize-handle';
+      document.body.appendChild(_handle);
+      _handle.addEventListener('touchstart', onHandleStart, { passive: false });
+      _handle.addEventListener('touchmove',  onHandleDrag,  { passive: false });
+      _handle.addEventListener('touchend',   onHandleEnd,   { passive: false });
+    }
+    return _handle;
+  }
+
+  function positionHandle(img) {
+    const r = img.getBoundingClientRect();
+    const h = getHandle();
+    h.style.left = (r.right  - 14 + window.scrollX) + 'px';
+    h.style.top  = (r.bottom - 14 + window.scrollY) + 'px';
+    h.style.display = 'block';
+  }
+
+  function selectImg(img) {
+    deselectImg();
+    _selImg = img;
+    img.style.outline = '2px solid #4A90E2';
+    positionHandle(img);
+  }
+
+  function deselectImg() {
+    if (_selImg) { _selImg.style.outline = ''; _selImg = null; }
+    if (_handle) _handle.style.display = 'none';
+  }
+
+  // ── Long-Press auf Bild ──
+  const editor = document.getElementById('note-content-input');
+  editor.addEventListener('touchstart', e => {
+    const img = e.target.tagName === 'IMG' ? e.target : null;
+    if (!img) { deselectImg(); return; }
+    _lpMoved = false;
+    clearTimeout(_lpTimer);
+    _lpTimer = setTimeout(() => {
+      if (!_lpMoved) { e.preventDefault(); selectImg(img); }
+    }, 500);
+  }, { passive: true });
+  editor.addEventListener('touchmove',  () => { _lpMoved = true; clearTimeout(_lpTimer); }, { passive: true });
+  editor.addEventListener('touchend',   () => { clearTimeout(_lpTimer); }, { passive: true });
+
+  // ── Handle Drag ──
+  function onHandleStart(e) {
+    e.preventDefault();
+    if (!_selImg) return;
+    const t = e.touches[0];
+    _dragStart = { x: t.clientX, y: t.clientY };
+    _origW = _selImg.offsetWidth  || parseInt(_selImg.getAttribute('width'))  || 100;
+    _origH = _selImg.offsetHeight || parseInt(_selImg.getAttribute('height')) || 100;
+  }
+
+  function onHandleDrag(e) {
+    e.preventDefault();
+    if (!_dragStart || !_selImg) return;
+    const t = e.touches[0];
+    const dx = t.clientX - _dragStart.x;
+    const ratio = _origH / Math.max(1, _origW);
+    const newW = Math.max(40, _origW + dx);
+    const newH = Math.max(40, Math.round(newW * ratio));
+    _selImg.style.width  = newW + 'px';
+    _selImg.style.height = newH + 'px';
+    _selImg.setAttribute('width',  newW);
+    _selImg.setAttribute('height', newH);
+    positionHandle(_selImg);
+  }
+
+  function onHandleEnd(e) {
+    e.preventDefault();
+    _dragStart = null;
+    // _lastLoadedContent zurücksetzen damit Resize gespeichert wird
+    _lastLoadedContent = null;
+    saveCurrentNote();
+  }
+
+  // Scrollen → Handle nachführen
+  editor.addEventListener('scroll', () => { if (_selImg) positionHandle(_selImg); }, { passive: true });
+})();
 
 // ─────────────────────────────────────────────
 //  AUTO-SAVE + SYNC
