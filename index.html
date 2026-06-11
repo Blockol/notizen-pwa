@@ -860,6 +860,8 @@
 // ─────────────────────────────────────────────
 let notes = [];
 let folders = [];
+let deletedIds = [];
+let deletedFolderIds = [];
 let collapsedFolders = new Set();
 let sortMode = 'name_asc';
 let currentNoteId = null;
@@ -936,13 +938,18 @@ function setConfig(cfg) { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
 function loadNotesFromStorage() {
   try {
     const d = JSON.parse(localStorage.getItem(DATA_KEY));
-    if (d) { folders = d.folders || []; return d.notes || []; }
+    if (d) {
+      folders = d.folders || [];
+      deletedIds = d.deleted_ids || [];
+      deletedFolderIds = d.deleted_folder_ids || [];
+      return d.notes || [];
+    }
     return [];
   } catch { return []; }
 }
 
 function saveNotesToStorage() {
-  const data = { notes, folders, version: 1, last_modified: localISO() };
+  const data = { notes, folders, deleted_ids: deletedIds, deleted_folder_ids: deletedFolderIds, version: 1, last_modified: localISO() };
   localStorage.setItem(DATA_KEY, JSON.stringify(data));
 }
 
@@ -1343,12 +1350,10 @@ function saveCurrentNote() {
 }
 
 function _addTombstone(id) {
-  const del = JSON.parse(localStorage.getItem('notizen_deleted_ids') || '[]');
-  if (!del.includes(id)) { del.push(id); localStorage.setItem('notizen_deleted_ids', JSON.stringify(del)); }
+  if (!deletedIds.includes(id)) deletedIds.push(id);
 }
 function _addFolderTombstone(id) {
-  const del = JSON.parse(localStorage.getItem('notizen_deleted_folder_ids') || '[]');
-  if (!del.includes(id)) { del.push(id); localStorage.setItem('notizen_deleted_folder_ids', JSON.stringify(del)); }
+  if (!deletedFolderIds.includes(id)) deletedFolderIds.push(id);
 }
 
 function deleteCurrentNote() {
@@ -1642,9 +1647,7 @@ async function _fetchRemote(cfg) {
 async function _uploadData(cfg) {
   // _base ist lokal — nicht hochladen
   const cleanNotes = notes.map(n => { const {_base, ...rest} = n; return rest; });
-  const deleted_ids = JSON.parse(localStorage.getItem('notizen_deleted_ids') || '[]');
-  const deleted_folder_ids = JSON.parse(localStorage.getItem('notizen_deleted_folder_ids') || '[]');
-  const data = { notes: cleanNotes, folders, deleted_ids, deleted_folder_ids, version: 1, last_modified: localISO() };
+  const data = { notes: cleanNotes, folders, deleted_ids: deletedIds, deleted_folder_ids: deletedFolderIds, version: 1, last_modified: localISO() };
   if (cfg.drive_script_url) {
     const payload = JSON.stringify({ ...data, token: cfg.drive_script_token || '' });
     // Versuch 1: normaler POST mit CORS
@@ -1699,15 +1702,11 @@ function _dbg(msg) {
 
 function _applyRemoteMerge(remote) {
   // ── Tombstones zusammenführen ──
-  const localDeleted = new Set(JSON.parse(localStorage.getItem('notizen_deleted_ids') || '[]'));
-  const remoteDeleted = new Set(remote.deleted_ids || []);
-  const allDeleted = new Set([...localDeleted, ...remoteDeleted]);
-  localStorage.setItem('notizen_deleted_ids', JSON.stringify([...allDeleted]));
+  const allDeleted = new Set([...deletedIds, ...(remote.deleted_ids || [])]);
+  deletedIds = [...allDeleted];
 
-  const localDeletedFolders = new Set(JSON.parse(localStorage.getItem('notizen_deleted_folder_ids') || '[]'));
-  const remoteDeletedFolders = new Set(remote.deleted_folder_ids || []);
-  const allDeletedFolders = new Set([...localDeletedFolders, ...remoteDeletedFolders]);
-  localStorage.setItem('notizen_deleted_folder_ids', JSON.stringify([...allDeletedFolders]));
+  const allDeletedFolders = new Set([...deletedFolderIds, ...(remote.deleted_folder_ids || [])]);
+  deletedFolderIds = [...allDeletedFolders];
 
   const localById = Object.fromEntries(notes.filter(n => !allDeleted.has(n.id)).map(n => [n.id, n]));
   const remoteById = Object.fromEntries((remote.notes||[]).filter(n => !allDeleted.has(n.id)).map(n => [n.id, n]));
