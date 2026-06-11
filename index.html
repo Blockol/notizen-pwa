@@ -729,6 +729,13 @@
                   <label class="s-toggle"><input type="checkbox" id="s-debug-toggle" onchange="setDebugVisible(this.checked)"><span class="s-toggle-slider"></span></label>
                 </div>
               </div>
+              <div class="s-row">
+                <div class="s-row-text">
+                  <div class="s-row-name">Gelöscht-Liste zurücksetzen</div>
+                  <div class="s-row-desc">Entfernt alle gespeicherten Lösch-Markierungen (Tombstones). Nur bei Sync-Problemen.</div>
+                </div>
+                <div class="s-control"><button class="s-btn-ghost" onclick="resetTombstones()">Zurücksetzen</button></div>
+              </div>
             </div>
 
             <!-- Appearance -->
@@ -916,8 +923,9 @@ let _isTyping = false;
 // Sync state
 let _syncStatus = 'idle';   // idle | uploading | downloading | offline | pending
 let _hasPendingUpload = false;
-let _syncBusy = false;  // Mutex: verhindert gleichzeitige Sync-Operationen
-let _syncRetries = 0;   // Zaehlt fehlgeschlagene Upload-Versuche
+let _syncBusy = false;
+let _syncRetries = 0;
+let _lastSyncTime = 0;  // Timestamp nach syncNow OK — verhindert sofortigen Re-Download
 
 const _SYNC_STATES = {
   idle:        { icon: '\u2713',  color: 'var(--accent)', spin: false, title: 'Synchronisiert' },
@@ -1622,8 +1630,9 @@ async function _fetchRemote(cfg) {
   if (cfg.drive_script_url) {
     const url = cfg.drive_script_url +
       (cfg.drive_script_url.includes('?') ? '&' : '?') +
-      'token=' + encodeURIComponent(cfg.drive_script_token || '');
-    const resp = await fetch(url);
+      'token=' + encodeURIComponent(cfg.drive_script_token || '') +
+      '&ts=' + Date.now();
+    const resp = await fetch(url, { cache: 'no-store' });
     if (!resp.ok) throw new Error(`Script HTTP ${resp.status}`);
     const text = await resp.text();
     if (!text || !text.trim()) { console.warn('[SYNC] Download: leere Antwort'); return null; }
@@ -1827,6 +1836,7 @@ async function syncNow() {
     saveNotesToStorage();
     _hasPendingUpload = false;
     _syncRetries = 0;
+    _lastSyncTime = Date.now();
     setSyncStatus('idle');
     _dbg('syncNow OK');
   } catch (e) {
@@ -1852,8 +1862,9 @@ async function syncNow() {
 
 // ── downloadFromDrive: only download + merge (no upload) ──
 async function downloadFromDrive() {
-  // Wenn Upload aussteht, stattdessen syncNow ausfuehren (download+upload)
   if (_hasPendingUpload) { syncNow(); return; }
+  // Nach syncNow 5s warten bevor Re-Download (verhindert Race Condition mit Drive-Cache)
+  if (Date.now() - _lastSyncTime < 5000) return;
   if (_syncBusy) return;
   _syncBusy = true;
   const cfg = getConfig();
@@ -1954,6 +1965,15 @@ function toggleFolder(id) {
   if (collapsedFolders.has(id)) collapsedFolders.delete(id);
   else collapsedFolders.add(id);
   renderList();
+}
+
+function resetTombstones() {
+  if (!confirm('Alle Lösch-Markierungen zurücksetzen? Bereits gelöschte Notizen/Ordner könnten zurückkehren.')) return;
+  deletedIds = [];
+  deletedFolderIds = [];
+  saveNotesToStorage();
+  showToast('Tombstones zurückgesetzt');
+  syncNow();
 }
 
 let _flpTimer = null, _flpX = 0, _flpY = 0;
