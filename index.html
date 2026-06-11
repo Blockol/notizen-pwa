@@ -950,6 +950,15 @@ function loadNotesFromStorage() {
       folders = d.folders || [];
       deletedIds = d.deleted_ids || [];
       deletedFolderIds = d.deleted_folder_ids || [];
+      // Einmalige Bereinigung: wenn Flag nicht gesetzt, Tombstones löschen (v7-fix)
+      if (!d._tombstone_cleaned_v7) {
+        deletedIds = [];
+        deletedFolderIds = [];
+        d._tombstone_cleaned_v7 = true;
+        d.deleted_ids = [];
+        d.deleted_folder_ids = [];
+        localStorage.setItem(DATA_KEY, JSON.stringify(d));
+      }
       return d.notes || [];
     }
     return [];
