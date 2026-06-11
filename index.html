@@ -1967,13 +1967,24 @@ function toggleFolder(id) {
   renderList();
 }
 
-function resetTombstones() {
+async function resetTombstones() {
   if (!confirm('Alle Lösch-Markierungen zurücksetzen? Bereits gelöschte Notizen/Ordner könnten zurückkehren.')) return;
   deletedIds = [];
   deletedFolderIds = [];
   saveNotesToStorage();
   showToast('Tombstones zurückgesetzt');
-  syncNow();
+  // Direkt uploaden OHNE vorher zu downloaden (sonst kommen Tombstones vom Remote zurück)
+  const cfg = getConfig();
+  if (cfg.drive_script_url || (cfg.drive_token && cfg.drive_file_id)) {
+    try {
+      setSyncStatus('uploading');
+      _dbg('Reset-Upload: ' + notes.length + ' Notizen, del_notes=[], del_folders=[]');
+      await _uploadData(cfg);
+      _lastSyncTime = Date.now();
+      setSyncStatus('idle');
+      showToast('Reset hochgeladen');
+    } catch(e) { setSyncStatus('error'); _dbg('Reset-Upload Fehler: ' + e); }
+  }
 }
 
 let _flpTimer = null, _flpX = 0, _flpY = 0;
