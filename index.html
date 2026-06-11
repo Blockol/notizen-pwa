@@ -1108,7 +1108,7 @@ function renderList(filteredNotes) {
 
   for (const folder of [...folders].sort((a,b) => (a.id||'').localeCompare(b.id||''))) {
     const col = collapsedFolders.has(folder.id);
-    html += `<div class="folder-row" onclick="toggleFolder('${escHtml(folder.id)}')">
+    html += `<div class="folder-row" onclick="toggleFolder('${escHtml(folder.id)}')" oncontextmenu="event.preventDefault();event.stopPropagation();openFolderMenu('${escHtml(folder.id)}','${escHtml(folder.name)}')">
       <span class="folder-arrow">${col ? '&#9654;' : '&#9660;'}</span>
       <span class="folder-icon">&#128193;</span>
       <span class="folder-name">${escHtml(folder.name)}</span>
