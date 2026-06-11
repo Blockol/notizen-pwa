@@ -1946,6 +1946,8 @@ function newFolder() {
   folders.push({ id, name: name.trim(), note_ids: [] });
   saveNotesToStorage();
   renderList();
+  _hasPendingUpload = true;
+  syncNow();
 }
 
 function toggleFolder(id) {
@@ -2014,6 +2016,7 @@ function moveNoteToFolder(noteId, folderId) {
   saveNotesToStorage();
   renderList();
   _hasPendingUpload = true;
+  syncNow();
 }
 
 // ─────────────────────────────────────────────
