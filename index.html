@@ -1108,7 +1108,7 @@ function renderList(filteredNotes) {
 
   for (const folder of [...folders].sort((a,b) => (a.id||'').localeCompare(b.id||''))) {
     const col = collapsedFolders.has(folder.id);
-    html += `<div class="folder-row" onclick="toggleFolder('${escHtml(folder.id)}')" oncontextmenu="event.preventDefault();event.stopPropagation();openFolderMenu('${escHtml(folder.id)}','${escHtml(folder.name)}')" ontouchstart="_folderTouchStart('${escHtml(folder.id)}','${escHtml(folder.name)}',event)" ontouchend="_folderTouchEnd()" ontouchmove="_folderTouchEnd()">
+    html += `<div class="folder-row" onclick="toggleFolder('${escHtml(folder.id)}')" oncontextmenu="event.preventDefault();event.stopPropagation();openFolderMenu('${escHtml(folder.id)}','${escHtml(folder.name)}')" ontouchstart="_folderTouchStart('${escHtml(folder.id)}','${escHtml(folder.name)}',event)" ontouchend="_folderTouchEnd()" ontouchmove="_folderTouchMove(event)">
       <span class="folder-arrow">${col ? '&#9654;' : '&#9660;'}</span>
       <span class="folder-icon">&#128193;</span>
       <span class="folder-name">${escHtml(folder.name)}</span>
@@ -1954,12 +1954,21 @@ function toggleFolder(id) {
   renderList();
 }
 
-let _flpTimer = null;
+let _flpTimer = null, _flpX = 0, _flpY = 0;
 function _folderTouchStart(id, name, e) {
-  _flpTimer = setTimeout(() => { _flpTimer = null; openFolderMenu(id, name); }, 500);
+  const t = e.touches[0];
+  _flpX = t.clientX; _flpY = t.clientY;
+  _flpTimer = setTimeout(() => { _flpTimer = null; openFolderMenu(id, name); }, 600);
 }
 function _folderTouchEnd() {
   if (_flpTimer) { clearTimeout(_flpTimer); _flpTimer = null; }
+}
+function _folderTouchMove(e) {
+  if (!_flpTimer) return;
+  const t = e.touches[0];
+  if (Math.abs(t.clientX - _flpX) > 10 || Math.abs(t.clientY - _flpY) > 10) {
+    clearTimeout(_flpTimer); _flpTimer = null;
+  }
 }
 
 function openFolderMenu(id, name) {
