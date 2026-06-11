@@ -1842,6 +1842,7 @@ async function syncNow() {
 
     setSyncStatus('uploading');
     _dbg('Upload: ' + notes.length + ' Notizen, ' + folders.length + ' Ordner, del_notes=' + JSON.stringify(deletedIds) + ', del_folders=' + JSON.stringify(deletedFolderIds));
+    folders.forEach(f => _dbg('  Folder "' + f.name + '" note_ids=' + JSON.stringify(f.note_ids||[])));
     await _uploadData(cfg);
     // Nach erfolgreichem Sync: base_content aktualisieren
     for (const n of notes) n._base = n.content;
