@@ -1349,6 +1349,7 @@ function deleteCurrentNote() {
   closeTab(currentNoteId);
   saveNotesToStorage();
   renderList();
+  _syncAfterDelete();
 }
 
 function updateStatusBar() {
@@ -1983,6 +1984,17 @@ function renameNote(id) {
   renderList();
 }
 
+let _downloadIntervalId = null;
+function _syncAfterDelete() {
+  // Download-Intervall stoppen, sofort uploaden, danach wieder starten
+  if (_downloadIntervalId) { clearInterval(_downloadIntervalId); _downloadIntervalId = null; }
+  _hasPendingUpload = true;
+  syncNow();
+  setTimeout(() => {
+    _downloadIntervalId = setInterval(() => { downloadFromDrive(); }, 2000);
+  }, 5000);
+}
+
 function deleteNoteById(id) {
   if (!confirm('Notiz l\u00f6schen?')) return;
   notes = notes.filter(n => n.id !== id);
@@ -1990,6 +2002,7 @@ function deleteNoteById(id) {
   closeTab(id);
   saveNotesToStorage();
   renderList();
+  _syncAfterDelete();
 }
 
 // ─────────────────────────────────────────────
@@ -2097,7 +2110,7 @@ function _updateFindCount() {
 //  AUTO-SAVE + SYNC
 // ─────────────────────────────────────────────
 setInterval(() => { if (currentNoteId) saveLocalImmediate(); }, 3000);
-setInterval(() => { downloadFromDrive(); }, 2000);
+_downloadIntervalId = setInterval(() => { downloadFromDrive(); }, 2000);
 
 // ─────────────────────────────────────────────
 //  INIT
