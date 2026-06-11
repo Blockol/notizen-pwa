@@ -1776,12 +1776,10 @@ function _applyRemoteMerge(remote) {
       if (allDeletedFolders.has(rf.id)) continue;
       const lf = localMap[rf.id];
       if (lf) {
-        // note_ids mergen: Remote-Reihenfolge + lokale Ergänzungen
-        const rIds = new Set(rf.note_ids||[]);
-        const mergedNoteIds = (rf.note_ids||[]).filter(n => !allDeleted.has(n));
-        const localOnly = (lf.note_ids||[]).filter(n => !rIds.has(n) && !allDeleted.has(n));
-        const name = (lf.modified||'') > (rf.modified||'') ? lf.name : rf.name;
-        mergedFolders.push({...rf, name, note_ids: [...mergedNoteIds, ...localOnly]});
+        // Neuerer Ordner gewinnt komplett (inkl. note_ids)
+        const localNewer = (lf.modified||'') >= (rf.modified||'');
+        const winner = localNewer ? lf : rf;
+        mergedFolders.push({...winner, note_ids: (winner.note_ids||[]).filter(n => !allDeleted.has(n))});
       } else {
         mergedFolders.push({...rf, note_ids: (rf.note_ids||[]).filter(n => !allDeleted.has(n))});
       }

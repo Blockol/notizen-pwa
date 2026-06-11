@@ -237,7 +237,7 @@ class DriveSync:
             from google_auth_oauthlib.flow import InstalledAppFlow
             from googleapiclient.discovery import build
 
-            SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+            SCOPES = ["https://www.googleapis.com/auth/drive"]
             token_path = Path.home() / ".notizen_token.json"
             creds = None
             if token_path.exists():
@@ -252,6 +252,7 @@ class DriveSync:
                     f.write(creds.to_json())
             self.service = build("drive", "v3", credentials=creds)
             self._find_or_create_file()
+            print(f"[SYNC] Drive file_id: {self.file_id}")
         except Exception as e:
             print(f"Drive setup error: {e}")
 
@@ -259,9 +260,13 @@ class DriveSync:
         try:
             results = self.service.files().list(
                 q="name='notizen_sync.json' and trashed=false",
-                fields="files(id, name)"
+                fields="files(id, name)",
+                orderBy="createdTime"
             ).execute()
             files = results.get("files", [])
+            if len(files) > 1:
+                print(f"[SYNC] WARNUNG: {len(files)} 'notizen_sync.json' Dateien gefunden! IDs: {[f['id'] for f in files]}")
+                print(f"[SYNC] Verwende älteste: {files[0]['id']}")
             if files:
                 self.file_id = files[0]["id"]
             else:
@@ -3232,17 +3237,17 @@ class NotizenApp(QMainWindow):
         remote_deleted_folders = set(remote.get("deleted_folder_ids", []))
         all_deleted_folders = local_deleted_folders | remote_deleted_folders
 
+        local_by_id = {n["id"]: n for n in self.notes_data.get("notes", [])}
+        remote_by_id = {n["id"]: n for n in remote.get("notes", [])}
+
         # Tombstone-Pruning: nur behalten wenn Notiz/Ordner auf einer Seite existiert
-        all_note_ids = set(list(local_by_id) + [n["id"] for n in remote.get("notes", [])])
+        all_note_ids = set(local_by_id) | set(remote_by_id)
         all_folder_ids = set(f["id"] for f in self.notes_data.get("folders", [])) | set(f["id"] for f in remote.get("folders", []))
         all_deleted = {d for d in all_deleted if d in all_note_ids}
         all_deleted_folders = {d for d in all_deleted_folders if d in all_folder_ids}
 
         self.notes_data["deleted_ids"] = list(all_deleted)
         self.notes_data["deleted_folder_ids"] = list(all_deleted_folders)
-
-        local_by_id = {n["id"]: n for n in self.notes_data.get("notes", [])}
-        remote_by_id = {n["id"]: n for n in remote.get("notes", [])}
         merged = {}
         changed = False
         for nid in set(list(local_by_id) + list(remote_by_id)):
@@ -3292,17 +3297,11 @@ class NotizenApp(QMainWindow):
                 continue
             local_f = local_fmap.get(fid)
             if local_f:
-                # Ordner auf beiden Seiten: note_ids mergen
-                merged_f = dict(f)
-                r_ids = set(f.get("note_ids", []))
-                l_ids = set(local_f.get("note_ids", []))
-                # Remote-Reihenfolge beibehalten, lokale Ergänzungen anhängen
-                merged_note_ids = [n for n in f.get("note_ids", []) if n not in all_deleted]
-                local_only = [n for n in local_f.get("note_ids", []) if n not in r_ids and n not in all_deleted]
-                merged_f["note_ids"] = merged_note_ids + local_only
-                # Name: neuerer gewinnt
-                if local_f.get("modified", "") > f.get("modified", ""):
-                    merged_f["name"] = local_f["name"]
+                # Ordner auf beiden Seiten: neuerer gewinnt komplett
+                local_newer = local_f.get("modified", "") >= f.get("modified", "")
+                winner = local_f if local_newer else f
+                merged_f = dict(winner)
+                merged_f["note_ids"] = [n for n in winner.get("note_ids", []) if n not in all_deleted]
                 merged_folders.append(merged_f)
             else:
                 merged_folders.append(f)
@@ -3313,8 +3312,12 @@ class NotizenApp(QMainWindow):
             if f["id"] not in seen_fids and f["id"] not in all_deleted_folders:
                 merged_folders.append(f)
 
-        folders_changed = (len(merged_folders) != len(self.notes_data.get("folders", [])) or
-                          any(mf["id"] != lf["id"] for mf, lf in zip(merged_folders, self.notes_data.get("folders", []))))
+        old_folders = self.notes_data.get("folders", [])
+        folders_changed = (len(merged_folders) != len(old_folders) or
+                          any(mf.get("id") != lf.get("id") or
+                              mf.get("note_ids", []) != lf.get("note_ids", []) or
+                              mf.get("name") != lf.get("name")
+                              for mf, lf in zip(merged_folders, old_folders)))
         if folders_changed:
             changed = True
         self.notes_data["folders"] = merged_folders
@@ -3362,12 +3365,10 @@ class NotizenApp(QMainWindow):
                 self.sync_status_signal.emit("\u2297  Kein Zugriff auf Drive", T["muted"])
                 return
             # Debug: aktuelle Notiz auf Remote pruefen
-            if self.current_note_id:
-                rn = next((n for n in remote.get("notes", []) if n["id"] == self.current_note_id), None)
-                ln = next((n for n in self.notes_data.get("notes", []) if n["id"] == self.current_note_id), None)
-                if rn and ln:
-                    print(f"[SYNC] Download: L={ln['modified'][11:23]} R={rn['modified'][11:23]} | L='{ln.get('content','')[:30]}' R='{rn.get('content','')[:30]}'")
+            print(f"[SYNC] DL: {len(remote.get('notes',[]))} Notizen, {len(remote.get('folders',[]))} Ordner, del={len(remote.get('deleted_ids',[]))}, del_f={len(remote.get('deleted_folder_ids',[]))}")
+            print(f"[SYNC] RAW keys: {list(remote.keys())}")
             changed = self._merge_remote(remote)
+            print(f"[SYNC] After merge: {len(self.notes_data.get('notes',[]))} Notizen, {len(self.notes_data.get('folders',[]))} Ordner, del={len(self.notes_data.get('deleted_ids',[]))}")
             # _base NUR fuer komplett neue Notizen setzen — NICHT fuer bestehende!
             # Sonst wird 3-Wege-Merge verhindert weil _base == remote nach Download
             for n in self.notes_data.get("notes", []):
