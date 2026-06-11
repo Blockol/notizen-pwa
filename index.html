@@ -1342,9 +1342,19 @@ function saveCurrentNote() {
   saveLocalImmediate();
 }
 
+function _addTombstone(id) {
+  const del = JSON.parse(localStorage.getItem('notizen_deleted_ids') || '[]');
+  if (!del.includes(id)) { del.push(id); localStorage.setItem('notizen_deleted_ids', JSON.stringify(del)); }
+}
+function _addFolderTombstone(id) {
+  const del = JSON.parse(localStorage.getItem('notizen_deleted_folder_ids') || '[]');
+  if (!del.includes(id)) { del.push(id); localStorage.setItem('notizen_deleted_folder_ids', JSON.stringify(del)); }
+}
+
 function deleteCurrentNote() {
   if (!currentNoteId) return;
   if (!confirm('Notiz loeschen?')) return;
+  _addTombstone(currentNoteId);
   notes = notes.filter(n => n.id !== currentNoteId);
   closeTab(currentNoteId);
   saveNotesToStorage();
@@ -1632,7 +1642,9 @@ async function _fetchRemote(cfg) {
 async function _uploadData(cfg) {
   // _base ist lokal — nicht hochladen
   const cleanNotes = notes.map(n => { const {_base, ...rest} = n; return rest; });
-  const data = { notes: cleanNotes, folders, version: 1, last_modified: localISO() };
+  const deleted_ids = JSON.parse(localStorage.getItem('notizen_deleted_ids') || '[]');
+  const deleted_folder_ids = JSON.parse(localStorage.getItem('notizen_deleted_folder_ids') || '[]');
+  const data = { notes: cleanNotes, folders, deleted_ids, deleted_folder_ids, version: 1, last_modified: localISO() };
   if (cfg.drive_script_url) {
     const payload = JSON.stringify({ ...data, token: cfg.drive_script_token || '' });
     // Versuch 1: normaler POST mit CORS
@@ -1686,8 +1698,19 @@ function _dbg(msg) {
 }
 
 function _applyRemoteMerge(remote) {
-  const localById = Object.fromEntries(notes.map(n => [n.id, n]));
-  const remoteById = Object.fromEntries((remote.notes||[]).map(n => [n.id, n]));
+  // ── Tombstones zusammenführen ──
+  const localDeleted = new Set(JSON.parse(localStorage.getItem('notizen_deleted_ids') || '[]'));
+  const remoteDeleted = new Set(remote.deleted_ids || []);
+  const allDeleted = new Set([...localDeleted, ...remoteDeleted]);
+  localStorage.setItem('notizen_deleted_ids', JSON.stringify([...allDeleted]));
+
+  const localDeletedFolders = new Set(JSON.parse(localStorage.getItem('notizen_deleted_folder_ids') || '[]'));
+  const remoteDeletedFolders = new Set(remote.deleted_folder_ids || []);
+  const allDeletedFolders = new Set([...localDeletedFolders, ...remoteDeletedFolders]);
+  localStorage.setItem('notizen_deleted_folder_ids', JSON.stringify([...allDeletedFolders]));
+
+  const localById = Object.fromEntries(notes.filter(n => !allDeleted.has(n.id)).map(n => [n.id, n]));
+  const remoteById = Object.fromEntries((remote.notes||[]).filter(n => !allDeleted.has(n.id)).map(n => [n.id, n]));
   const allIds = new Set([...Object.keys(localById), ...Object.keys(remoteById)]);
   const merged = [];
   let curNoteInfo = '';
@@ -1699,24 +1722,21 @@ function _applyRemoteMerge(remote) {
       const remoteChanged = r.content !== base;
 
       if (localChanged && remoteChanged && l.content !== r.content) {
-        // 3-Wege-Merge: beide haben seit letztem Sync geaendert
         const mergedContent = textMerge3(base, l.content, r.content);
         const mergedTitle = (l.modified||'') >= (r.modified||'') ? l.title : r.title;
         const result = {...l, content: mergedContent, title: mergedTitle, modified: localISO(), _base: mergedContent};
         merged.push(result);
-        _hasPendingUpload = true;  // Merge-Ergebnis muss hochgeladen werden
-        if (id === currentNoteId) curNoteInfo = '3-WAY MERGE: base=' + base.slice(0,15) + '... → "' + mergedContent.slice(0,30) + '..."';
+        _hasPendingUpload = true;
+        if (id === currentNoteId) curNoteInfo = '3-WAY MERGE → "' + mergedContent.slice(0,30) + '..."';
       } else {
-        // Standard: neuerer Timestamp gewinnt
         const localWins = (l.modified||'') >= (r.modified||'');
         const winner = localWins ? l : r;
-        // Wenn Remote gewinnt: _base auf remote Content setzen (akzeptiert)
         if (!localWins && r.content !== base) winner._base = r.content;
         merged.push(winner);
         if (id === currentNoteId) {
           curNoteInfo = localWins
-            ? 'LOCAL gewinnt: L=' + (l.modified||'?').slice(11,23) + ' >= R=' + (r.modified||'?').slice(11,23)
-            : 'REMOTE gewinnt: R=' + (r.modified||'?').slice(11,23) + ' > L=' + (l.modified||'?').slice(11,23);
+            ? 'LOCAL gewinnt: ' + (l.modified||'?').slice(11,23)
+            : 'REMOTE gewinnt: ' + (r.modified||'?').slice(11,23);
         }
       }
     } else {
@@ -1726,12 +1746,32 @@ function _applyRemoteMerge(remote) {
   notes = merged;
   if (curNoteInfo) _dbg('Merge: ' + curNoteInfo);
 
-  // Merge folders
-  if (remote.folders) {
-    const remoteMap = Object.fromEntries((remote.folders||[]).map(f => [f.id, f]));
+  // ── Ordner-Merge: Remote-Reihenfolge als Basis ──
+  if (remote.folders !== undefined) {
     const localMap = Object.fromEntries(folders.map(f => [f.id, f]));
-    const allFIds = new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]);
-    folders = [...allFIds].map(id => remoteMap[id] || localMap[id]);
+    const remoteMap = Object.fromEntries((remote.folders||[]).map(f => [f.id, f]));
+    const mergedFolders = [];
+    const seenFIds = new Set();
+    for (const rf of (remote.folders||[])) {
+      if (allDeletedFolders.has(rf.id)) continue;
+      const lf = localMap[rf.id];
+      if (lf) {
+        // note_ids mergen: Remote-Reihenfolge + lokale Ergänzungen
+        const rIds = new Set(rf.note_ids||[]);
+        const mergedNoteIds = (rf.note_ids||[]).filter(n => !allDeleted.has(n));
+        const localOnly = (lf.note_ids||[]).filter(n => !rIds.has(n) && !allDeleted.has(n));
+        const name = (lf.modified||'') > (rf.modified||'') ? lf.name : rf.name;
+        mergedFolders.push({...rf, name, note_ids: [...mergedNoteIds, ...localOnly]});
+      } else {
+        mergedFolders.push({...rf, note_ids: (rf.note_ids||[]).filter(n => !allDeleted.has(n))});
+      }
+      seenFIds.add(rf.id);
+    }
+    // Lokale neue Ordner anhängen
+    for (const lf of folders) {
+      if (!seenFIds.has(lf.id) && !allDeletedFolders.has(lf.id)) mergedFolders.push(lf);
+    }
+    folders = mergedFolders;
   }
   saveNotesToStorage();
   renderList();
@@ -1923,25 +1963,28 @@ function renameFolder(id, currentName) {
   const newName = prompt('Neuer Name:', currentName);
   if (!newName || !newName.trim()) return;
   const f = folders.find(f => f.id === id);
-  if (f) { f.name = newName.trim(); saveNotesToStorage(); renderList(); }
+  if (f) { f.name = newName.trim(); f.modified = localISO(); saveNotesToStorage(); renderList(); _hasPendingUpload = true; }
 }
 
 function deleteFolder(id) {
   if (!confirm('Ordner l\u00f6schen? Die Notizen bleiben erhalten.')) return;
+  _addFolderTombstone(id);
   folders = folders.filter(f => f.id !== id);
   collapsedFolders.delete(id);
   saveNotesToStorage();
   renderList();
+  _syncAfterDelete();
 }
 
 function moveNoteToFolder(noteId, folderId) {
-  folders.forEach(f => { f.note_ids = f.note_ids.filter(id => id !== noteId); });
+  folders.forEach(f => { f.note_ids = f.note_ids.filter(id => id !== noteId); f.modified = localISO(); });
   if (folderId) {
     const f = folders.find(f => f.id === folderId);
-    if (f && !f.note_ids.includes(noteId)) f.note_ids.push(noteId);
+    if (f && !f.note_ids.includes(noteId)) { f.note_ids.push(noteId); f.modified = localISO(); }
   }
   saveNotesToStorage();
   renderList();
+  _hasPendingUpload = true;
 }
 
 // ─────────────────────────────────────────────
@@ -1997,6 +2040,7 @@ function _syncAfterDelete() {
 
 function deleteNoteById(id) {
   if (!confirm('Notiz l\u00f6schen?')) return;
+  _addTombstone(id);
   notes = notes.filter(n => n.id !== id);
   folders.forEach(f => { f.note_ids = (f.note_ids || []).filter(nid => nid !== id); });
   closeTab(id);
