@@ -1816,11 +1816,11 @@ async function syncNow() {
     _dbg('syncNow START');
     setSyncStatus('downloading');
     const remote = await _fetchRemote(cfg);
-    _dbg('Download: ' + (remote ? (remote.notes||[]).length + ' Notizen, ' + (remote.folders||[]).length + ' Ordner, del_folders=' + JSON.stringify(remote.deleted_folder_ids||[]) : 'NULL'));
+    _dbg('Download: ' + (remote ? (remote.notes||[]).length + ' Notizen, ' + (remote.folders||[]).length + ' Ordner, del_notes=' + JSON.stringify(remote.deleted_ids||[]) + ', del_folders=' + JSON.stringify(remote.deleted_folder_ids||[]) : 'NULL'));
     if (remote) _applyRemoteMerge(remote);
 
     setSyncStatus('uploading');
-    _dbg('Upload: ' + notes.length + ' Notizen, ' + folders.length + ' Ordner, del_folders=' + JSON.stringify(deletedFolderIds));
+    _dbg('Upload: ' + notes.length + ' Notizen, ' + folders.length + ' Ordner, del_notes=' + JSON.stringify(deletedIds) + ', del_folders=' + JSON.stringify(deletedFolderIds));
     await _uploadData(cfg);
     // Nach erfolgreichem Sync: base_content aktualisieren
     for (const n of notes) n._base = n.content;
@@ -1862,9 +1862,8 @@ async function downloadFromDrive() {
   try {
     const remote = await _fetchRemote(cfg);
     if (remote) {
+      _dbg('DL: ' + (remote.notes||[]).length + ' Notizen, del_notes=' + JSON.stringify(remote.deleted_ids||[]));
       _applyRemoteMerge(remote);
-      // _base NUR fuer komplett neue Notizen (ohne _base) setzen — NICHT fuer bestehende!
-      // Sonst wird 3-Wege-Merge verhindert weil _base == remote nach Download
       for (const n of notes) if (n._base === undefined) n._base = n.content;
     }
     setSyncStatus('idle');
