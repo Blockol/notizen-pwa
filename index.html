@@ -1777,7 +1777,7 @@ function _applyRemoteMerge(remote) {
       const lf = localMap[rf.id];
       if (lf) {
         // Neuerer Ordner gewinnt komplett (inkl. note_ids)
-        const localNewer = (lf.modified||'') >= (rf.modified||'');
+        const localNewer = (lf.modified||'') > (rf.modified||'');
         const winner = localNewer ? lf : rf;
         mergedFolders.push({...winner, note_ids: (winner.note_ids||[]).filter(n => !allDeleted.has(n))});
       } else {
@@ -1965,7 +1965,7 @@ function newFolder() {
   const name = prompt('Ordnername:');
   if (!name || !name.trim()) return;
   const id = 'folder_' + Date.now();
-  folders.push({ id, name: name.trim(), note_ids: [] });
+  folders.push({ id, name: name.trim(), note_ids: [], modified: localISO() });
   saveNotesToStorage();
   renderList();
   _hasPendingUpload = true;

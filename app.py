@@ -2931,13 +2931,14 @@ class NotizenApp(QMainWindow):
         for folder in self.notes_data.get("folders", []):
             if note_id in folder.get("note_ids", []):
                 folder["note_ids"].remove(note_id)
+                folder["modified"] = datetime.now().isoformat()
 
     def _new_folder(self):
         name, ok = QInputDialog.getText(self, "Neuer Ordner", "Ordnername:", text="Neuer Ordner")
         if not ok or not name.strip():
             return
         folder_id = "folder_" + datetime.now().strftime("%Y%m%d%H%M%S%f")
-        self.notes_data["folders"].append({"id": folder_id, "name": name.strip(), "note_ids": []})
+        self.notes_data["folders"].append({"id": folder_id, "name": name.strip(), "note_ids": [], "modified": datetime.now().isoformat()})
         save_notes(self.notes_data)
         self._refresh_list()
         self._has_local_changes = True
@@ -2985,6 +2986,8 @@ class NotizenApp(QMainWindow):
         save_notes(self.notes_data)
         self._has_local_changes = True
         self._refresh_list()
+        if self.drive_sync and self.drive_sync.is_connected():
+            threading.Thread(target=self._upload_to_drive, daemon=True).start()
 
     def _save_current(self):
         if not self.current_note_id:
@@ -3298,10 +3301,11 @@ class NotizenApp(QMainWindow):
             local_f = local_fmap.get(fid)
             if local_f:
                 # Ordner auf beiden Seiten: neuerer gewinnt komplett
-                local_newer = local_f.get("modified", "") >= f.get("modified", "")
+                local_newer = local_f.get("modified", "") > f.get("modified", "")
                 winner = local_f if local_newer else f
                 merged_f = dict(winner)
                 merged_f["note_ids"] = [n for n in winner.get("note_ids", []) if n not in all_deleted]
+                print(f"[SYNC] Folder '{f.get('name','')}': L_mod={local_f.get('modified','?')[-12:]} R_mod={f.get('modified','?')[-12:]} → {'LOCAL' if local_newer else 'REMOTE'} wins, note_ids={merged_f['note_ids']}")
                 merged_folders.append(merged_f)
             else:
                 merged_folders.append(f)
