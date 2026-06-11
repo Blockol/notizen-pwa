@@ -1773,6 +1773,14 @@ function _applyRemoteMerge(remote) {
     folders = mergedFolders;
   }
   saveNotesToStorage();
+  // Stale Tabs entfernen (Notizen die nicht mehr existieren)
+  const prevTabCount = openTabs.length;
+  openTabs = openTabs.filter(id => notes.some(n => n.id === id));
+  if (activeTabId && !openTabs.includes(activeTabId)) {
+    activeTabId = openTabs.length ? openTabs[openTabs.length - 1] : null;
+    currentNoteId = activeTabId;
+  }
+  if (openTabs.length !== prevTabCount) { renderTabBar(); saveTabState(); }
   renderList();
 
   // Refresh editor — NICHT wenn User tippt
