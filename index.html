@@ -1879,7 +1879,7 @@ function _applyRemoteMerge(remote) {
       const localChanged = l.content !== base;
       const remoteChanged = r.content !== base;
 
-      if (localChanged && remoteChanged && l.content !== r.content) {
+      if (base && localChanged && remoteChanged && l.content !== r.content) {
         const mergedContent = textMerge3(base, l.content, r.content);
         const mergedTitle = (l.modified||'') >= (r.modified||'') ? l.title : r.title;
         const result = {...l, content: mergedContent, title: mergedTitle, modified: localISO(), _base: mergedContent};
@@ -1889,8 +1889,7 @@ function _applyRemoteMerge(remote) {
       } else {
         const localWins = (l.modified||'') >= (r.modified||'');
         const winner = localWins ? l : r;
-        if (!localWins && r.content !== base) winner._base = r.content;
-        merged.push(winner);
+        merged.push({...winner, _base: winner.content});
         if (id === currentNoteId) {
           curNoteInfo = localWins
             ? 'LOCAL gewinnt: ' + (l.modified||'?').slice(11,23)
