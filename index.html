@@ -2659,11 +2659,13 @@ function _initFirebase() {
 }
 
 // Beim Laden initialisieren
-if (localStorage.getItem('fb_skip') === '1') {
-  _authDone();
-} else {
-  _initFirebase();
-}
+// AUTH TEMPORÄR DEAKTIVIERT (Google-Konto gesperrt — wird reaktiviert sobald gelöst)
+_authDone();
+// if (localStorage.getItem('fb_skip') === '1') {
+//   _authDone();
+// } else {
+//   _initFirebase();
+// }
 </script>
 </body>
 </html>
