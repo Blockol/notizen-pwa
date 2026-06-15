@@ -2095,7 +2095,7 @@ async function downloadFromDrive() {
           currentNoteId = activeTabId;
         }
         renderTabBar();
-        renderNotesList();
+        renderList();
         if (currentNoteId) loadNote(currentNoteId);
       } else {
         _applyRemoteMerge(remote);
@@ -2153,6 +2153,14 @@ window.addEventListener('online', () => {
     setTimeout(() => syncNow(), 500);
   } else {
     setTimeout(() => downloadFromDrive(), 500);
+  }
+});
+
+// Sofort sync wenn App wieder sichtbar wird (z.B. Rückkehr aus Home-Screen)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    _lastSyncTime = 0; // 5s-Guard aufheben
+    downloadFromDrive();
   }
 });
 
