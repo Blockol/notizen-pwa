@@ -1033,6 +1033,7 @@ let _hasPendingUpload = false;
 let _syncBusy = false;
 let _syncRetries = 0;
 let _lastSyncTime = 0;  // Timestamp nach syncNow OK — verhindert sofortigen Re-Download
+let _oneWaySync = localStorage.getItem('one_way_sync') === '1'; // true = PC ist Master, PWA darf nicht uploaden
 
 const _SYNC_STATES = {
   idle:        { icon: '\u2713',  color: 'var(--accent)', spin: false, title: 'Synchronisiert' },
@@ -1963,6 +1964,7 @@ function _applyRemoteMerge(remote) {
 
 // ── syncNow: merge-then-upload (prevents overwriting other devices' changes) ──
 async function syncNow() {
+  if (_oneWaySync) { _dbg('syncNow blockiert (Einweg-Sync)'); return; }
   if (_syncBusy) { _hasPendingUpload = true; return; }  // Mutex: warte bis vorherige Operation fertig
   _syncBusy = true;
   const cfg = getConfig();
@@ -2010,7 +2012,7 @@ async function syncNow() {
 
 // ── downloadFromDrive: only download + merge (no upload) ──
 async function downloadFromDrive() {
-  if (_hasPendingUpload) { syncNow(); return; }
+  if (!_oneWaySync && _hasPendingUpload) { syncNow(); return; }
   // Nach syncNow 5s warten bevor Re-Download (verhindert Race Condition mit Drive-Cache)
   if (Date.now() - _lastSyncTime < 5000) return;
   if (_syncBusy) return;
@@ -2021,6 +2023,18 @@ async function downloadFromDrive() {
   try {
     const remote = await _fetchRemote(cfg);
     if (remote) {
+      // Einweg-Sync-Flag vom PC erkennen
+      const wasOneWay = _oneWaySync;
+      _oneWaySync = !!remote.one_way_sync;
+      localStorage.setItem('one_way_sync', _oneWaySync ? '1' : '0');
+      if (_oneWaySync !== wasOneWay) {
+        _dbg('Sync-Modus ge\u00e4ndert: ' + (_oneWaySync ? 'Einweg (PC\u2192Handy)' : 'Zwei-Wege'));
+        showToast(_oneWaySync ? 'Einweg-Sync aktiv \u2013 nur Lesen' : 'Zwei-Wege-Sync aktiv');
+        // Seite neu laden damit alle Listener korrekt arbeiten
+        setTimeout(() => location.reload(), 1500);
+        _syncBusy = false;
+        return;
+      }
       _dbg('DL: ' + (remote.notes||[]).length + ' Notizen, del_notes=' + JSON.stringify(remote.deleted_ids||[]));
       _applyRemoteMerge(remote);
       for (const n of notes) if (n._base === undefined) n._base = n.content;
