@@ -891,10 +891,11 @@
 
             <!-- Sync -->
             <div class="settings-page" id="sp-sync">
-              <div class="s-row" id="oneway-status-row" style="display:none;margin-bottom:12px;background:var(--bg2);border-radius:8px;padding:10px 14px;border:1px solid var(--accent)">
+              <div class="s-label">SYNC-MODUS</div>
+              <div class="s-row" id="oneway-status-row" style="margin-bottom:12px;background:var(--bg2);border-radius:8px;padding:10px 14px;border:1px solid var(--border)">
                 <div class="s-row-text" style="flex:1">
-                  <div class="s-row-name" style="color:var(--accent)">Einweg-Sync aktiv</div>
-                  <div class="s-row-desc">Der PC ist Master &ndash; &Auml;nderungen am Handy werden nicht hochgeladen. Diese Einstellung kann nur am PC ge&auml;ndert werden.</div>
+                  <div class="s-row-name" id="oneway-status-title">Zwei-Wege-Sync</div>
+                  <div class="s-row-desc" id="oneway-status-desc">PC und Handy synchronisieren in beide Richtungen. Diese Einstellung kann nur am PC ge&auml;ndert werden.</div>
                 </div>
               </div>
               <div class="s-label">EMPFOHLEN: APPS SCRIPT (kein Token-Ablauf)</div>
@@ -1684,7 +1685,20 @@ function openSettings() {
   document.getElementById('s-drive-token').value = cfg.drive_token || '';
   document.getElementById('s-file-id').value = cfg.drive_file_id || '';
   document.getElementById('s-debug-toggle').checked = !!cfg.debug_console;
-  document.getElementById('oneway-status-row').style.display = _oneWaySync ? 'flex' : 'none';
+  const _oRow = document.getElementById('oneway-status-row');
+  const _oTitle = document.getElementById('oneway-status-title');
+  const _oDesc = document.getElementById('oneway-status-desc');
+  if (_oneWaySync) {
+    _oRow.style.borderColor = 'var(--accent)';
+    _oTitle.style.color = 'var(--accent)';
+    _oTitle.textContent = 'Einweg-Sync aktiv (PC \u2192 Handy)';
+    _oDesc.textContent = 'Der PC ist Master \u2013 \u00c4nderungen am Handy werden nicht hochgeladen. Diese Einstellung kann nur am PC ge\u00e4ndert werden.';
+  } else {
+    _oRow.style.borderColor = 'var(--border)';
+    _oTitle.style.color = 'var(--text)';
+    _oTitle.textContent = 'Zwei-Wege-Sync';
+    _oDesc.textContent = 'PC und Handy synchronisieren in beide Richtungen. Diese Einstellung kann nur am PC ge\u00e4ndert werden.';
+  }
   // Zugang-Seite
   const _u = _fbAuth && _fbAuth.currentUser;
   document.getElementById('s-auth-user').textContent =
