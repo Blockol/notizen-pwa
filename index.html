@@ -2063,6 +2063,7 @@ async function downloadFromDrive() {
     const remote = await _fetchRemote(cfg);
     if (remote) {
       // Einweg-Sync-Flag vom PC erkennen
+      _dbg('one_way_sync in remote: ' + JSON.stringify(remote.one_way_sync) + ' (keys: ' + Object.keys(remote).filter(k => k.startsWith('one')).join(',') + ')');
       const wasOneWay = _oneWaySync;
       _oneWaySync = !!remote.one_way_sync;
       localStorage.setItem('one_way_sync', _oneWaySync ? '1' : '0');
