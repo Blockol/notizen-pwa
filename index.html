@@ -1041,6 +1041,23 @@ let _syncBusy = false;
 let _syncRetries = 0;
 let _lastSyncTime = 0;  // Timestamp nach syncNow OK — verhindert sofortigen Re-Download
 let _oneWaySync = localStorage.getItem('one_way_sync') === '1'; // true = PC ist Master, PWA darf nicht uploaden
+function _isReadOnly() { return _oneWaySync; }
+function _guardWrite() { if (_isReadOnly()) { showToast('Nur Lesen \u2013 Einweg-Sync aktiv'); return true; } return false; }
+function _applyReadOnly() {
+  const ro = _isReadOnly();
+  const editor = document.getElementById('note-content-input');
+  const title = document.getElementById('note-title-input');
+  if (editor) editor.contentEditable = ro ? 'false' : 'true';
+  if (title) title.readOnly = ro;
+  if (title) title.style.opacity = ro ? '0.7' : '1';
+  // + Button ausblenden
+  const addBtn = document.getElementById('tab-add');
+  if (addBtn) addBtn.style.display = ro ? 'none' : '';
+  // Ordner-erstellen Button ausblenden
+  document.querySelectorAll('.sb-tool-btn').forEach(btn => {
+    if (btn.textContent.includes('+')) btn.style.display = ro ? 'none' : '';
+  });
+}
 
 const _SYNC_STATES = {
   idle:        { icon: '\u2713',  color: 'var(--accent)', spin: false, title: 'Synchronisiert' },
@@ -1460,6 +1477,7 @@ function saveTabState() {
 //  NOTES CRUD
 // ─────────────────────────────────────────────
 function newNote() {
+  if (_guardWrite()) return;
   saveCurrentNote();
   const id = Date.now().toString();
   const note = { id, title: '', content: '', modified: localISO() };
@@ -1480,7 +1498,7 @@ let _uploadDebounce = null;
 
 // Sofortige lokale Speicherung bei jedem Tastendruck — verhindert Race Condition mit Download
 function saveLocalImmediate() {
-  if (!currentNoteId) return;
+  if (_isReadOnly() || !currentNoteId) return;
   const note = notes.find(n => n.id === currentNoteId);
   if (!note) return;
   const newTitle = document.getElementById('note-title-input').value.trim() || 'Unbenannte Notiz';
@@ -2118,6 +2136,7 @@ window.addEventListener('online', () => {
 //  FOLDERS
 // ─────────────────────────────────────────────
 function newFolder() {
+  if (_guardWrite()) return;
   const name = prompt('Ordnername:');
   if (!name || !name.trim()) return;
   const id = 'folder_' + Date.now();
@@ -2172,6 +2191,7 @@ function _folderTouchMove(e) {
 }
 
 function openFolderMenu(id, name) {
+  if (_guardWrite()) return;
   showCtxSheet(name, [
     { label: 'Umbenennen', action: () => renameFolder(id, name) },
     { label: 'Ordner l\u00f6schen (Notizen bleiben)', cls: 'danger', action: () => deleteFolder(id) },
@@ -2179,6 +2199,7 @@ function openFolderMenu(id, name) {
 }
 
 function renameFolder(id, currentName) {
+  if (_guardWrite()) return;
   const newName = prompt('Neuer Name:', currentName);
   if (!newName || !newName.trim()) return;
   const f = folders.find(f => f.id === id);
@@ -2186,6 +2207,7 @@ function renameFolder(id, currentName) {
 }
 
 function deleteFolder(id) {
+  if (_guardWrite()) return;
   if (!confirm('Ordner l\u00f6schen? Die Notizen bleiben erhalten.')) return;
   const folder = folders.find(f => f.id === id);
   const noteIdsInFolder = folder ? (folder.note_ids || []) : [];
@@ -2199,6 +2221,7 @@ function deleteFolder(id) {
 }
 
 function moveNoteToFolder(noteId, folderId) {
+  if (_guardWrite()) return;
   folders.forEach(f => { f.note_ids = f.note_ids.filter(id => id !== noteId); f.modified = localISO(); });
   if (folderId) {
     const f = folders.find(f => f.id === folderId);
@@ -2222,6 +2245,7 @@ function cancelNoteHold() {
 }
 
 function openNoteMenu(id) {
+  if (_guardWrite()) return;
   const note = notes.find(n => n.id === id);
   if (!note) return;
   const items = [
@@ -2262,6 +2286,7 @@ function _syncAfterDelete() {
 }
 
 function deleteNoteById(id) {
+  if (_guardWrite()) return;
   if (!confirm('Notiz l\u00f6schen?')) return;
   _addTombstone(id);
   notes = notes.filter(n => n.id !== id);
@@ -2532,6 +2557,7 @@ if (initCfg.theme === 'light') {
 
 renderList();
 renderTabBar();
+_applyReadOnly();
 
 const _lastTab = initCfg.last_active_tab;
 const _allIds = allTabs();
