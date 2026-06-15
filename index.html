@@ -2069,9 +2069,15 @@ async function downloadFromDrive() {
       localStorage.setItem('one_way_sync', _oneWaySync ? '1' : '0');
       if (_oneWaySync !== wasOneWay) {
         _dbg('Sync-Modus ge\u00e4ndert: ' + (_oneWaySync ? 'Einweg (PC\u2192Handy)' : 'Zwei-Wege'));
-        showToast(_oneWaySync ? 'Einweg-Sync aktiv \u2013 nur Lesen' : 'Zwei-Wege-Sync aktiv');
-        // Seite neu laden damit alle Listener korrekt arbeiten
-        setTimeout(() => location.reload(), 1500);
+        // Vollbild-Overlay: User "rausschmeissen"
+        const kickDiv = document.createElement('div');
+        kickDiv.style.cssText = 'position:fixed;inset:0;z-index:99999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
+        kickDiv.innerHTML = _oneWaySync
+          ? '<div style="font-size:48px">\ud83d\udd12</div><div style="font-size:18px;font-weight:bold;color:var(--text)">Einweg-Sync aktiviert</div><div style="color:var(--muted);text-align:center;padding:0 32px">Der PC ist jetzt Master.<br>App wird neu geladen\u2026</div>'
+          : '<div style="font-size:48px">\ud83d\udd13</div><div style="font-size:18px;font-weight:bold;color:var(--text)">Zwei-Wege-Sync aktiviert</div><div style="color:var(--muted);text-align:center;padding:0 32px">Bearbeitung wieder m\u00f6glich.<br>App wird neu geladen\u2026</div>';
+        document.body.appendChild(kickDiv);
+        // Nach 2.5s neu laden
+        setTimeout(() => location.reload(), 2500);
         _syncBusy = false;
         return;
       }
