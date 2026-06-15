@@ -2082,7 +2082,24 @@ async function downloadFromDrive() {
         return;
       }
       _dbg('DL: ' + (remote.notes||[]).length + ' Notizen, del_notes=' + JSON.stringify(remote.deleted_ids||[]));
-      _applyRemoteMerge(remote);
+      if (_oneWaySync) {
+        // Einweg-Sync: Remote-Daten direkt uebernehmen, kein Merge
+        notes = (remote.notes || []).map(n => ({...n, _base: n.content}));
+        folders = remote.folders || [];
+        deletedIds = remote.deleted_ids || [];
+        deletedFolderIds = remote.deleted_folder_ids || [];
+        saveNotesToStorage();
+        if (activeTabId && !notes.some(n => n.id === activeTabId)) {
+          const remaining = allTabs();
+          activeTabId = remaining.length ? remaining[remaining.length - 1] : null;
+          currentNoteId = activeTabId;
+        }
+        renderTabBar();
+        renderNotesList();
+        if (currentNoteId) loadNote(currentNoteId);
+      } else {
+        _applyRemoteMerge(remote);
+      }
       for (const n of notes) if (n._base === undefined) n._base = n.content;
     }
     setSyncStatus('idle');

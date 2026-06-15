@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notizen-v23';
+const CACHE_NAME = 'notizen-v24';
 const ASSETS = ['/notizen-pwa/', '/notizen-pwa/index.html', '/notizen-pwa/manifest.json'];
 
 self.addEventListener('install', e => {
