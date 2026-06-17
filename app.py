@@ -4541,7 +4541,7 @@ class NotizenApp(QMainWindow):
         self._build_ui()
         self.task_panel.load_tasks(
             self.notes_data["tasks"],
-            lambda: save_notes(self.notes_data),
+            self._task_save_and_sync,
             self.notes_data["deleted_task_ids"]
         )
 
@@ -5989,6 +5989,13 @@ class NotizenApp(QMainWindow):
         self.sync_status_signal.emit("\u2191  Wird hochgeladen...", "#4da6ff")
         threading.Thread(target=self._upload_to_drive, daemon=True).start()
 
+    def _task_save_and_sync(self):
+        """Wird vom Task-Panel aufgerufen wenn Tasks geaendert/geloescht werden."""
+        save_notes(self.notes_data)
+        self._has_local_changes = True
+        if self.drive_sync and self.drive_sync.is_connected():
+            self._upload_debounce.start(3000)
+
     def _auto_sync(self):
         # Nur hochladen wenn PC-User tatsaechlich Aenderungen gemacht hat
         # verhindert das Ueberschreiben von Handy-Aenderungen durch PC-Fallback-Upload
@@ -6225,7 +6232,7 @@ class NotizenApp(QMainWindow):
         self._update_tabs()
         self.task_panel.load_tasks(
             self.notes_data["tasks"],
-            lambda: save_notes(self.notes_data),
+            self._task_save_and_sync,
             self.notes_data["deleted_task_ids"]
         )
         if self.current_note_id:
